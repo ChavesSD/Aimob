@@ -71,8 +71,12 @@ describe('diagnóstico público', () => {
     expect(d).toMatch(/Pix\/boleto com baixa automática está em validação/); // não vende como pronto o que não foi validado
     expect(d).toMatch(/roadmap/);
   });
-  it('dor de transparência para o proprietário continua marcada como indisponível', () => {
-    expect(buildDiagnosis(['leads_perdidos', 'transparencia_proprietario'], { sells: true, rents: false })).toMatch(/Em desenvolvimento \(ainda indisponível\).*proprietário/);
+  it('transparência para o proprietário: disponível, mas com os limites ditos claramente', () => {
+    const d = buildDiagnosis(['transparencia_proprietario'], { sells: true, rents: false });
+    expect(d).toMatch(/portal do proprietário mostra imóveis/);
+    expect(d).toMatch(/somente leitura/);
+    expect(d).toMatch(/ainda não existem/); // manutenção, chamados e documentos
+    expect(d).not.toMatch(/Em desenvolvimento/);
   });
 });
 

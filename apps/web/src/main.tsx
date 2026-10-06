@@ -16,12 +16,37 @@ import Automations from './pages/Automations';
 import Rentals from './pages/Rentals';
 import Security from './pages/Security';
 import Payments from './pages/Payments';
+import AcceptInvite from './pages/AcceptInvite';
+import { PortalHome, PortalProperties, PortalPayouts } from './pages/Portal';
+
+/** Página inicial por perfil. Lê a sessão a cada renderização (e não uma vez, na montagem das rotas). */
+function Home() {
+  return getSession()?.user.role === 'landlord' ? <Navigate to="/portal" replace /> : <Dashboard />;
+}
 
 function Shell() {
   const s = getSession();
   const nav = useNavigate();
   if (!s) return <Navigate to="/login" replace />;
   const logout = () => { setSession(null); nav('/login'); };
+  // Proprietário (usuário externo): área própria, sem nenhum menu da operação.
+  if (s.user.role === 'landlord') {
+    return (
+      <div className="shell">
+        <aside className="sidebar">
+          <div className="logo">{brand.name}<span>.</span></div>
+          <nav className="nav" aria-label="Portal do proprietário">
+            <NavLink to="/portal" end>Resumo</NavLink>
+            <NavLink to="/portal/imoveis">Meus imóveis</NavLink>
+            <NavLink to="/portal/repasses">Repasses e extrato</NavLink>
+            <NavLink to="/seguranca">Segurança</NavLink>
+          </nav>
+          <div className="foot">{s.user.name}<br /><button className="btn ghost" style={{ marginTop: 8 }} onClick={logout}>Sair</button></div>
+        </aside>
+        <main className="main"><Outlet /></main>
+      </div>
+    );
+  }
   return (
     <div className="shell">
       <aside className="sidebar">
@@ -53,8 +78,12 @@ createRoot(document.getElementById('root')!).render(
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/aceitar-convite" element={<AcceptInvite />} />
         <Route element={<Shell />}>
-          <Route index element={<Dashboard />} />
+          <Route index element={<Home />} />
+          <Route path="portal" element={<PortalHome />} />
+          <Route path="portal/imoveis" element={<PortalProperties />} />
+          <Route path="portal/repasses" element={<PortalPayouts />} />
           <Route path="crm" element={<Leads />} />
           <Route path="pipeline" element={<Pipeline />} />
           <Route path="agenda" element={<Agenda />} />

@@ -3,6 +3,7 @@ import { can, type Action, type Module } from './permissions.js';
 
 declare module 'fastify' {
   interface FastifyRequest { session?: import('./auth.js').Session }
+  interface FastifyInstance { registeredRoutes: { method: string; url: string; public: boolean }[] }
 }
 
 /** preHandler que exige permissão `action` no módulo `mod` para o papel atual da sessão. */

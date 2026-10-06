@@ -17,8 +17,8 @@ const PAIN_INFO: Record<Pain, { insight: string; available: boolean; how: string
     how: 'Rodízio automático entre corretores ativos, com opção de atribuição manual pela gestão.' },
   financeiro: { available: true, insight: 'financeiro da locação (cobranças, inadimplência e repasses, com baixa e repasse registrados manualmente)',
     how: 'Contratos, cobranças mensais, inadimplência com multa e juros, repasses e reajuste anual já são controlados no sistema, com baixa e repasse registrados manualmente. A emissão de Pix/boleto com baixa automática está em validação com contas reais; conciliação bancária ainda não existe.' },
-  transparencia_proprietario: { available: false, insight: 'transparência para o proprietário do imóvel',
-    how: 'O portal do proprietário está no roadmap e ainda não está disponível.' },
+  transparencia_proprietario: { available: true, insight: 'transparência para o proprietário do imóvel (somente consulta)',
+    how: 'O portal do proprietário mostra imóveis, interesse recebido, aluguéis, repasses e extrato em CSV. É somente leitura: manutenção, chamados e documentos ainda não existem.' },
   relatorios: { available: true, insight: 'visão da operação em tempo real',
     how: 'O painel inicial resume leads, visitas e o que precisa de atenção, cada alerta com uma ação.' },
 };
@@ -34,6 +34,6 @@ export function buildDiagnosis(pains: Pain[], opts: { sells: boolean; rents: boo
   if (avail.length) parts.push(`Também já podemos ajudar em: ${avail.join('; ')}.`);
   const road = [main, ...rest].filter((p) => !PAIN_INFO[p].available).map((p) => PAIN_INFO[p].insight);
   if (road.length) parts.push(`Em desenvolvimento (ainda indisponível): ${road.join('; ')}.`);
-  if (opts.rents) parts.push('Na locação, o produto já controla contratos, cobranças, inadimplência, repasses e reajustes com registro manual; Pix/boleto com baixa automática está em validação; assinatura eletrônica e portal do proprietário estão no roadmap.');
+  if (opts.rents) parts.push('Na locação, o produto já controla contratos, cobranças, inadimplência, repasses e reajustes com registro manual; Pix/boleto com baixa automática está em validação; assinatura eletrônica e contratos em documento estão no roadmap.');
   return parts.join(' ');
 }

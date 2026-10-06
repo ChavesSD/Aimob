@@ -4,7 +4,7 @@ import { api } from '../api';
 import { useApi } from '../hooks';
 import { Empty, ErrorBox, Skeleton } from '../ui';
 
-const TABS: [string, string][] = [['contratos', 'Contratos'], ['cobrancas', 'Cobranças'], ['inadimplencia', 'Inadimplência'], ['repasses', 'Repasses'], ['reajustes', 'Reajustes']];
+const TABS: [string, string][] = [['contratos', 'Contratos'], ['cobrancas', 'Cobranças'], ['inadimplencia', 'Inadimplência'], ['repasses', 'Repasses'], ['reajustes', 'Reajustes'], ['proprietarios', 'Proprietários']];
 // Financeiro sempre mostra centavos (o brl() global arredonda para reais inteiros, adequado só a KPIs grandes).
 const money = (c: number) => (c / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDate = (iso: string) => iso.split('-').reverse().join('/');
@@ -35,6 +35,7 @@ export default function Rentals() {
       {tab === 'inadimplencia' && <Delinquency notify={setMsg} />}
       {tab === 'repasses' && <Payouts notify={setMsg} />}
       {tab === 'reajustes' && <Adjustments notify={setMsg} />}
+      {tab === 'proprietarios' && <Owners notify={setMsg} />}
     </>
   );
 }
@@ -323,5 +324,71 @@ function Adjustments({ notify }: { notify: Notify }) {
       )}
       <p><Link to="/locacao?aba=contratos">Ver contratos</Link></p>
     </div>
+  );
+}
+
+/* ---------- Proprietários: acesso ao portal ---------- */
+interface OwnerAccess { id: string; name: string; email: string | null; hasUser: boolean; accepted: boolean; inviteExpiresAt: string | null; properties: number }
+
+function Owners({ notify }: { notify: Notify }) {
+  const { data, error, loading, reload } = useApi<{ items: OwnerAccess[] }>('/api/portal/access');
+  const [emailFor, setEmailFor] = useState<string | null>(null);
+  const [email, setEmail] = useState('');
+  const [invite, setInvite] = useState<{ name: string; url: string } | null>(null);
+
+  async function send(o: OwnerAccess, e: FormEvent) {
+    e.preventDefault();
+    try {
+      const r = await api<{ inviteUrl: string }>('/api/portal/invites', { method: 'POST', body: JSON.stringify({ contactId: o.id, email }) });
+      const url = r.inviteUrl.startsWith('http') ? r.inviteUrl : `${location.origin}${r.inviteUrl}`;
+      setInvite({ name: o.name, url }); setEmailFor(null); reload();
+    } catch (err: any) { notify(err.message); }
+  }
+  async function revoke(o: OwnerAccess) {
+    if (!confirm(`Revogar o acesso de ${o.name} ao portal? Ele será desconectado na hora.`)) return;
+    try { await api(`/api/portal/access/${o.id}`, { method: 'DELETE' }); notify('Acesso revogado.'); reload(); } catch (err: any) { notify(err.message); }
+  }
+  if (loading && !data) return <Skeleton rows={4} />;
+  if (error || !data) return <ErrorBox message={error ?? ''} onRetry={reload} />;
+  return (
+    <>
+      {invite && (
+        <section className="card" style={{ borderColor: 'var(--gold)', marginBottom: 16 }} aria-labelledby="inv">
+          <h2 id="inv" style={{ marginTop: 0, fontSize: 16 }}>Link de acesso de {invite.name}</h2>
+          <p>Envie este link ao proprietário (WhatsApp ou e-mail). Ele vale por 7 dias, funciona uma única vez e <strong>só é mostrado agora</strong>.</p>
+          <code style={{ wordBreak: 'break-all', display: 'block' }}>{invite.url}</code>
+          <button className="btn gold" style={{ marginTop: 8 }} onClick={() => navigator.clipboard?.writeText(invite.url).then(() => notify('Link copiado.')).catch(() => notify('Não foi possível copiar automaticamente.'))}>Copiar link</button>{' '}
+          <button className="btn ghost" onClick={() => setInvite(null)}>Fechar</button>
+        </section>
+      )}
+      <div className="card table-wrap">
+        <p style={{ marginTop: 0 }}>Dê aos proprietários acesso ao portal para acompanharem imóveis, aluguéis e repasses sem precisar ligar.</p>
+        {data.items.length === 0 ? <Empty text="Nenhum proprietário cadastrado ainda." /> : (
+          <table>
+            <thead><tr><th>Proprietário</th><th>Imóveis</th><th>Acesso</th><th /></tr></thead>
+            <tbody>{data.items.map((o) => (
+              <tr key={o.id}>
+                <td>{o.name}{o.email && <><br /><small style={{ color: 'var(--muted)' }}>{o.email}</small></>}</td>
+                <td>{o.properties}</td>
+                <td>{o.accepted ? 'Ativo' : o.hasUser ? 'Convite pendente' : 'Sem acesso'}</td>
+                <td>
+                  {emailFor === o.id ? (
+                    <form onSubmit={(e) => send(o, e)} style={{ display: 'flex', gap: 6 }}>
+                      <input aria-label={`E-mail de ${o.name}`} type="email" required placeholder="e-mail do proprietário" value={email} onChange={(e) => setEmail(e.target.value)} style={{ minHeight: 34 }} />
+                      <button className="btn gold" style={{ minHeight: 34 }}>Gerar link</button>
+                    </form>
+                  ) : (
+                    <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <button className="btn ghost" onClick={() => { setEmailFor(o.id); setEmail(o.email ?? ''); }}>{o.hasUser ? 'Novo convite' : 'Convidar'}</button>
+                      {o.hasUser && <button className="btn ghost" onClick={() => revoke(o)}>Revogar</button>}
+                    </span>
+                  )}
+                </td>
+              </tr>
+            ))}</tbody>
+          </table>
+        )}
+      </div>
+    </>
   );
 }

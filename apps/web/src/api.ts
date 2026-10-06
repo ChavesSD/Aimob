@@ -31,3 +31,18 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const brl = (cents: number | string | null | undefined) =>
   cents == null ? '—' : (Number(cents) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
+
+/** Baixa um arquivo que exige autenticação (o link direto não carrega o cabeçalho Authorization). */
+export async function downloadFile(path: string, filename: string): Promise<void> {
+  const s = getSession();
+  const res = await fetch(path, { headers: s ? { authorization: `Bearer ${s.token}` } : {} });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new ApiError(body.error ?? 'Não conseguimos gerar o arquivo agora.', res.status);
+  }
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}

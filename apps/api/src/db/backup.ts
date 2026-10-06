@@ -11,7 +11,7 @@ import { MIGRATIONS } from './migrations.js';
 // Ordem de dependência (chaves estrangeiras): pais antes dos filhos.
 export const BACKUP_TABLES = [
   'tenants', 'users', 'contacts', 'properties', 'leads', 'visits', 'property_events', 'pipeline_stages', 'tenant_settings',
-  'mfa_recovery_codes', 'tasks', 'notifications', 'automation_rules', 'automation_runs',
+  'mfa_recovery_codes', 'user_invites', 'tasks', 'notifications', 'automation_rules', 'automation_runs',
   'rental_contracts', 'rental_charges', 'rental_payouts', 'rental_adjustments', 'payment_accounts', 'payment_events', 'tenant_company',
   'audit_log', 'diagnostics', 'landing_events',
 ] as const;

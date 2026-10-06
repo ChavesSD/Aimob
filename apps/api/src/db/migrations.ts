@@ -85,6 +85,21 @@ export const MIGRATIONS: Migration[] = [
       updated_at timestamptz NOT NULL DEFAULT now()
     );
   ` },
+  { version: 5, name: 'portal do proprietario', sql: `
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS contact_id uuid REFERENCES contacts(id);
+    CREATE UNIQUE INDEX IF NOT EXISTS users_contact_idx ON users (contact_id) WHERE contact_id IS NOT NULL;
+    CREATE TABLE IF NOT EXISTS user_invites (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id uuid NOT NULL REFERENCES tenants(id),
+      user_id uuid NOT NULL REFERENCES users(id),
+      token_hash text NOT NULL UNIQUE,
+      expires_at timestamptz NOT NULL,
+      used_at timestamptz,
+      created_by uuid,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS user_invites_user_idx ON user_invites (user_id);
+  ` },
 ];
 
 export async function runMigrations(db: Db, migrations: Migration[] = MIGRATIONS): Promise<number[]> {

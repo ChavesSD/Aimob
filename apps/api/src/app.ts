@@ -14,6 +14,7 @@ import { guard } from './guard.js';
 import { registerAutomationRoutes } from './routes/automation.js';
 import { registerPublicRoutes } from './routes/public.js';
 import { registerRentalRoutes } from './routes/rentals.js';
+import { registerPortalRoutes } from './routes/portal.js';
 import { registerPaymentRoutes } from './routes/payments.js';
 import { fireTrigger } from './domain/automation.js';
 import { scoreLead } from './domain/scoring.js';
@@ -36,6 +37,12 @@ const LEAD_FILTERS: Record<string, string> = {
 
 export async function buildApp(db: Db, opts: { trustProxy?: boolean; logger?: boolean; fetchImpl?: typeof fetch } = {}): Promise<FastifyInstance> {
   const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 1_000_000, trustProxy: opts.trustProxy ?? false });
+  // Inventário das rotas registradas (usado por um teste que garante que perfis externos são barrados em tudo que não é do portal).
+  const registeredRoutes: { method: string; url: string; public: boolean }[] = [];
+  app.decorate('registeredRoutes', registeredRoutes);
+  app.addHook('onRoute', (r) => {
+    for (const m of [r.method].flat()) registeredRoutes.push({ method: String(m), url: r.url, public: !!(r.config as { public?: boolean } | undefined)?.public });
+  });
   await app.register(helmet);
   await app.register(cors, { origin: process.env.CORS_ORIGIN?.split(',') ?? false });
   await app.register(rateLimit, { global: false });
@@ -400,6 +407,7 @@ export async function buildApp(db: Db, opts: { trustProxy?: boolean; logger?: bo
   registerAutomationRoutes(app, db);
   registerPublicRoutes(app, db);
   registerRentalRoutes(app, db, opts.fetchImpl);
+  registerPortalRoutes(app, db);
   registerPaymentRoutes(app, db, opts.fetchImpl);
 
   return app;
