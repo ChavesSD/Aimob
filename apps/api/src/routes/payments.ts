@@ -1,14 +1,18 @@
+import { createHash, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import { scoped } from '../db/client.js';
 import { audit } from '../audit.js';
 import { guard } from '../guard.js';
+import { platformAsaas } from '../config.js';
+import { normalizeDocument, maskDocument } from '../domain/document.js';
 import { today } from '../domain/rentalService.js';
 import { AsaasProvider } from '../payments/asaas.js';
 import { GatewayError } from '../payments/provider.js';
 import {
-  getProvider, issueCharge, providerTuning, persistEvent, processEvent, regenerateWebhookToken, retryPendingEvents, saveAccount, verifyWebhookToken,
+  companyMissing, getProvider, issueCharge, loadCompany, persistEvent, processEvent, provisionAccount, providerTuning, regenerateWebhookToken,
+  retryPendingEvents, saveAccount, saveCompany, tenantForEvent, verifyWebhookToken, type IncomingEvent,
 } from '../payments/service.js';
 
 const uuid = z.string().uuid();
@@ -28,11 +32,56 @@ const issueErrors = {
 
 const webhookUrl = (tenantId: string) => `${process.env.PUBLIC_API_URL ?? ''}/api/webhooks/asaas/${tenantId}`;
 
+const eventSchema = z.object({
+  id: z.string().min(1).max(200), event: z.string().min(1).max(80),
+  payment: z.object({ id: z.string().max(100).optional(), value: z.number().optional(), status: z.string().max(40).optional(),
+    paymentDate: z.string().max(20).nullable().optional(), externalReference: z.string().max(100).nullable().optional() }).passthrough().optional(),
+}).passthrough();
+
 export function registerPaymentRoutes(app: FastifyInstance, db: Db, fetchImpl?: typeof fetch) {
   // ---- Conta do provedor ----
   app.get('/api/payments/account', { preHandler: guard('finance', 'admin') }, async (req) => {
-    const [a] = await scoped(db, req.session!.tid).rows<{ environment: string }>(`SELECT environment FROM payment_accounts WHERE tenant_id = $1`);
-    return { connected: !!a, provider: 'asaas', environment: a?.environment ?? null, webhookUrl: webhookUrl(req.session!.tid), publicUrlConfigured: !!process.env.PUBLIC_API_URL };
+    const tid = req.session!.tid;
+    const [a] = await scoped(db, tid).rows<{ mode: string; status: string; environment: string }>(`SELECT mode, status, environment FROM payment_accounts WHERE tenant_id = $1`);
+    const company = await loadCompany(db, tid);
+    return {
+      connected: a?.status === 'active', provisioning: a?.status === 'provisioning', mode: a?.mode ?? null, environment: a?.environment ?? null,
+      platformAvailable: !!platformAsaas(),
+      company: company ? { name: company.name, documentMask: maskDocument(company.documentLast2), email: company.email } : null,
+      companyMissing: companyMissing(company),
+      // O webhook por imobiliária só existe no modo "chave própria"; no modo plataforma o webhook é global e não aparece aqui.
+      webhookUrl: a?.mode === 'own_key' ? webhookUrl(tid) : null, publicUrlConfigured: !!process.env.PUBLIC_API_URL,
+    };
+  });
+
+  // ---- Dados da empresa (necessários para criar a subconta) ----
+  app.put('/api/payments/company', { preHandler: guard('finance', 'admin') }, async (req, reply) => {
+    const b = z.object({
+      name: z.string().trim().min(2).max(160), document: z.string().transform((v, ctx) => { const d = normalizeDocument(v); if (!d) ctx.addIssue({ code: 'custom', message: 'CPF ou CNPJ inválido.' }); return d as string; }),
+      email: z.string().trim().email().max(160), phone: z.string().max(30).optional(),
+      birthDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      monthlyRevenueCents: z.number().int().positive().max(100_000_000_00),
+      street: z.string().max(160).optional(), number: z.string().max(20).optional(), complement: z.string().max(80).optional(),
+      neighborhood: z.string().max(100).optional(), cep: z.string().max(12).optional(),
+    }).parse(req.body);
+    await saveCompany(db, req.session!.tid, b);
+    await audit(db, req, { action: 'payments.company', resource: 'tenant_company', summary: 'Dados da empresa para a conta de recebimento atualizados' }); // sem CPF/CNPJ no log
+    return { ok: true, missing: companyMissing(await loadCompany(db, req.session!.tid)) };
+  });
+
+  // ---- Criação da subconta (modo plataforma, como no Aidate) ----
+  app.post('/api/payments/account/provision', { preHandler: guard('finance', 'admin'), config: { rateLimit: { max: 3, timeWindow: '1 minute' } } }, async (req, reply) => {
+    try {
+      const r = await provisionAccount(db, req.session!.tid, fetchImpl);
+      if (!r.ok) {
+        if (r.error === 'platform_unavailable') return reply.code(409).send({ error: 'A conta principal de pagamentos da plataforma não está configurada. Fale com o suporte.' });
+        if (r.error === 'company_missing') return reply.code(422).send({ error: `Complete os dados da empresa: ${r.missing.join(', ')}.`, missing: r.missing });
+        if (r.error === 'in_progress') return reply.code(409).send({ error: 'A criação da conta de recebimento já está em andamento. Aguarde alguns instantes.' });
+        return reply.code(409).send({ error: 'Esta imobiliária já tem conta de recebimento conectada.' });
+      }
+      await audit(db, req, { action: 'payments.provision', resource: 'payment_account', summary: 'Conta de recebimento (subconta) criada' });
+      return { ok: true };
+    } catch (e) { return gatewayReply(reply, e); }
   });
 
   app.put('/api/payments/account', { preHandler: guard('finance', 'admin'), config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req, reply) => {
@@ -106,17 +155,30 @@ export function registerPaymentRoutes(app: FastifyInstance, db: Db, fetchImpl?: 
 
   app.post('/api/payments/events/retry', { preHandler: guard('finance', 'admin') }, async (req) => ({ retried: await retryPendingEvents(db, req.session!.tid) }));
 
+  // ---- Webhook GLOBAL da plataforma (mesmo esquema do Aidate: um endereço, um token, ASAAS_WEBHOOK_TOKEN) ----
+  const sha = (v: string) => createHash('sha256').update(v).digest();
+  app.get('/api/webhooks/asaas', { config: { public: true } }, async () => ({ ok: true }));
+  app.post('/api/webhooks/asaas', { config: { public: true, rateLimit: { max: 600, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const expected = platformAsaas()?.webhookToken ?? '';
+    const given = String(req.headers['asaas-access-token'] ?? '').trim();
+    if (expected.length < 32 || !given || !timingSafeEqual(sha(expected), sha(given))) return reply.code(401).send({ error: 'Não autorizado.' });
+    const ev = eventSchema.parse(req.body) as IncomingEvent;
+    // A conta Asaas pode ser compartilhada com outros sistemas: evento que não é de uma cobrança do Aimob é reconhecido e descartado.
+    const tid = await tenantForEvent(db, ev);
+    if (!tid) return { ok: true, ignored: true };
+    const rowId = await persistEvent(db, tid, ev, req.body);
+    if (!rowId) return { ok: true, duplicate: true };
+    await processEvent(db, tid, rowId);
+    return { ok: true };
+  });
+
   // ---- Webhook do Asaas (público; autenticado pelo token do header asaas-access-token) ----
   app.post('/api/webhooks/asaas/:tenantId', { config: { public: true, rateLimit: { max: 600, timeWindow: '1 minute' } } }, async (req, reply) => {
     const tid = uuid.safeParse((req.params as any).tenantId);
     const token = String(req.headers['asaas-access-token'] ?? '');
     // Mesma resposta para imobiliária inexistente e token errado: não revela quais imobiliárias existem.
     if (!tid.success || !token || !(await verifyWebhookToken(db, tid.data, token))) return reply.code(401).send({ error: 'Não autorizado.' });
-    const ev = z.object({
-      id: z.string().min(1).max(200), event: z.string().min(1).max(80),
-      payment: z.object({ id: z.string().max(100).optional(), value: z.number().optional(), status: z.string().max(40).optional(),
-        paymentDate: z.string().max(20).nullable().optional(), externalReference: z.string().max(100).nullable().optional() }).passthrough().optional(),
-    }).passthrough().parse(req.body);
+    const ev = eventSchema.parse(req.body);
     // Persistir antes de responder 200 (entrega "ao menos uma vez"): se o processamento falhar, o evento fica salvo e é reprocessado.
     const rowId = await persistEvent(db, tid.data, ev, req.body);
     if (!rowId) return { ok: true, duplicate: true };

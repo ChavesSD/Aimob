@@ -132,7 +132,9 @@ describe('emissão de Pix/boleto', () => {
     expect(r.statusCode).toBe(200);
     const post = asaas.calls.find((x) => x.method === 'POST' && x.path === '/payments')!;
     expect(post.headers['access_token']).toBe(asaas.validKey);
-    expect(post.body).toMatchObject({ billingType: 'UNDEFINED', value: c.amount_cents / 100, dueDate: c.due_date, externalReference: c.id, fine: { value: 2 }, interest: { value: 1 } });
+    expect(post.body).toMatchObject({ billingType: 'BOLETO', value: c.amount_cents / 100, dueDate: c.due_date, externalReference: `aimob_charge_${c.id}`, fine: { value: 2 }, interest: { value: 1 }, postalService: false });
+    expect(post.body.split).toBeUndefined(); // chave própria: o dinheiro já cai na conta da imobiliária
+    expect(post.headers['user-agent']).toBe('Aimob');
     const cust = asaas.calls.find((x) => x.method === 'POST' && x.path === '/customers')!;
     expect(cust.body.cpfCnpj).toBe('52998224725');
     const after = await chargeOf(t, 'Felipe Nunes', (x) => x.id === c.id);
@@ -163,12 +165,12 @@ describe('emissão de Pix/boleto', () => {
   it('falha ambígua (cobrança criada, resposta perdida) não gera boleto duplicado', async () => {
     const t = await login('owner@a.demo');
     const c = await chargeOf(t, 'Larissa Duarte', (x) => x.status === 'overdue');
-    const before = [...asaas.payments.values()].filter((p) => p.externalReference === c.id).length;
+    const before = [...asaas.payments.values()].filter((p) => p.externalReference === `aimob_charge_${c.id}`).length;
     expect(before).toBe(0);
     asaas.failNext(/POST \/payments$/, 'lost-response');
     const r = await call(t, 'POST', `/api/charges/${c.id}/issue`);
     expect(r.statusCode).toBe(200);
-    expect([...asaas.payments.values()].filter((p) => p.externalReference === c.id)).toHaveLength(1);
+    expect([...asaas.payments.values()].filter((p) => p.externalReference === `aimob_charge_${c.id}`)).toHaveLength(1);
   });
 
   it('erro transitório é repetido; indisponibilidade persistente vira mensagem humana e libera nova tentativa', async () => {
@@ -180,7 +182,7 @@ describe('emissão de Pix/boleto', () => {
     const ok = await call(t, 'POST', `/api/charges/${c.id}/issue`);
     expect(ok.statusCode).toBe(200);
 
-    const c2 = (await charges(t)).find((x) => x.renter_name === 'Gustavo Reis' && x.status === 'open' && !x.payment);
+    const c2 = (await charges(t)).find((x) => x.renter_name === 'Gustavo Reis' && (x.status === 'open' || x.status === 'overdue') && !x.payment && x.id !== c.id)!;
     asaas.failNext(/POST \/payments$/, 'http500', 10);
     const down = await call(t, 'POST', `/api/charges/${c2.id}/issue`);
     expect(down.statusCode).toBe(503);
@@ -194,7 +196,7 @@ describe('emissão de Pix/boleto', () => {
 
   it('rejeição do provedor (4xx) mostra o motivo; chave revogada pede reconexão', async () => {
     const t = await login('owner@a.demo');
-    const c = (await charges(t)).find((x) => x.status === 'open' && !x.payment && x.renter_name === 'Larissa Duarte');
+    const c = (await charges(t)).find((x) => (x.status === 'open' || x.status === 'overdue') && !x.payment && x.renter_name === 'Larissa Duarte')!;
     asaas.failNext(/POST \/payments$/, 'http400', 1);
     const r = await call(t, 'POST', `/api/charges/${c.id}/issue`);
     expect(r.statusCode).toBe(422);

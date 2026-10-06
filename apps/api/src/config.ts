@@ -22,6 +22,30 @@ export function requireJwtSecret(): Uint8Array {
   return new TextEncoder().encode(s);
 }
 
+/**
+ * Conta principal do Asaas da plataforma. Mesmos nomes de variáveis do Aidate:
+ * ASAAS_API_KEY, ASAAS_API_URL, ASAAS_USER_AGENT, ASAAS_WEBHOOK_TOKEN.
+ * Com ela, o Aimob cria uma subconta por imobiliária e cobra com split para a carteira dela.
+ */
+export interface PlatformAsaas { apiKey: string; baseUrl: string; userAgent: string; webhookToken: string }
+export function platformAsaas(env: NodeJS.ProcessEnv = process.env): PlatformAsaas | null {
+  const apiKey = (env.ASAAS_API_KEY ?? '').trim();
+  if (!apiKey) return null;
+  return {
+    apiKey,
+    baseUrl: normalizeAsaasUrl(env.ASAAS_API_URL),
+    userAgent: (env.ASAAS_USER_AGENT ?? '').trim() || 'Aimob',
+    webhookToken: (env.ASAAS_WEBHOOK_TOKEN ?? '').trim(),
+  };
+}
+
+/** Igual ao Aidate: o padrão é produção; endereços antigos do sandbox são convertidos para o atual. */
+export function normalizeAsaasUrl(configured?: string): string {
+  let url = (configured ?? '').trim().replace(/\/$/, '') || 'https://api.asaas.com/v3';
+  if (/^https?:\/\/sandbox\.asaas\.com\/(api\/)?v3$/i.test(url)) url = 'https://api-sandbox.asaas.com/v3';
+  return url;
+}
+
 /** Em produção, recusa subir com configuração insegura ou incompleta. Retorna a lista de problemas. */
 export function productionProblems(env: NodeJS.ProcessEnv = process.env): string[] {
   const p: string[] = [];
@@ -33,5 +57,6 @@ export function productionProblems(env: NodeJS.ProcessEnv = process.env): string
   if (!env.DATA_ENC_KEY || env.DATA_ENC_KEY.length < 32) p.push('DATA_ENC_KEY ausente ou com menos de 32 caracteres (protege CPF/CNPJ e chaves de gateway).');
   if (!env.PUBLIC_API_URL || !/^https:\/\//.test(env.PUBLIC_API_URL)) p.push('PUBLIC_API_URL ausente ou sem https:// (necessária para o endereço do webhook de pagamentos).');
   if (env.TRUST_PROXY !== 'true' && env.TRUST_PROXY !== 'false') p.push('TRUST_PROXY deve ser "true" ou "false" (decisão explícita): atrás de balanceador, sem "true" o rate limit enxerga o IP do proxy.');
+  if ((env.ASAAS_API_KEY ?? '').trim() && (env.ASAAS_WEBHOOK_TOKEN ?? '').trim().length < 32) p.push('ASAAS_WEBHOOK_TOKEN ausente ou com menos de 32 caracteres (exigência do Asaas; autentica o webhook da plataforma).');
   return p;
 }

@@ -5,6 +5,12 @@ const BASE = { sandbox: 'https://api-sandbox.asaas.com/v3', production: 'https:/
 export interface AsaasOptions {
   apiKey: string;
   environment: 'sandbox' | 'production';
+  /** Endereço da API (conta da plataforma, via ASAAS_API_URL). Quando ausente, vale `environment`. */
+  baseUrl?: string;
+  /** Asaas exige User-Agent em contas novas; mesmo critério do Aidate (ASAAS_USER_AGENT). */
+  userAgent?: string;
+  /** Conta da plataforma: cobra com split de 100% para a carteira (subconta) da imobiliária. */
+  splitWalletId?: string;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
   /** Pausas entre tentativas (ms). Em testes, zeros. */
@@ -16,6 +22,11 @@ function baseUrl(env: 'sandbox' | 'production'): string {
   const override = process.env.ASAAS_BASE_URL;
   if (override && process.env.NODE_ENV !== 'production') return override.replace(/\/$/, '');
   return BASE[env];
+}
+
+export interface SubAccountInput {
+  name: string; email: string; document: string; birthDate?: string; monthlyRevenueCents: number;
+  phone?: string; street?: string; number?: string; complement?: string; neighborhood?: string; cep?: string;
 }
 
 const reais = (cents: number) => Number((cents / 100).toFixed(2));
@@ -43,9 +54,9 @@ export class AsaasProvider implements PaymentProvider {
     const timer = setTimeout(() => ctl.abort(), this.timeout);
     let res: Response;
     try {
-      res = await this.f(`${baseUrl(this.o.environment)}${path}`, {
+      res = await this.f(`${this.o.baseUrl ?? baseUrl(this.o.environment)}${path}`, {
         method, signal: ctl.signal,
-        headers: { access_token: this.o.apiKey, 'content-type': 'application/json', 'user-agent': 'Aimob/1.0' },
+        headers: { access_token: this.o.apiKey, 'content-type': 'application/json', 'user-agent': this.o.userAgent ?? 'Aimob' },
         body: body === undefined ? undefined : JSON.stringify(body),
       });
     } catch {
@@ -93,11 +104,14 @@ export class AsaasProvider implements PaymentProvider {
   }
 
   async createPayment(i: CreatePaymentInput): Promise<GatewayPayment> {
-    const body = {
-      customer: i.customerId, billingType: 'UNDEFINED', value: reais(i.valueCents), dueDate: i.dueDate,
+    const body: Record<string, unknown> = {
+      // BOLETO já traz o Pix (QR) junto e não oferece cartão: aluguel não deve ser pago parcelado no cartão.
+      customer: i.customerId, billingType: 'BOLETO', value: reais(i.valueCents), dueDate: i.dueDate,
       description: i.description, externalReference: i.externalReference,
       fine: { value: i.fineBps / 100 }, interest: { value: i.interestBpsMonth / 100 },
+      postalService: false, // sem envio postal do boleto (serviço pago do Asaas), como no Aidate
     };
+    if (this.o.splitWalletId) body.split = [{ walletId: this.o.splitWalletId, percentualValue: 100 }];
     try {
       return this.map(await this.call<any>('POST', '/payments', body));
     } catch (e) {
@@ -118,6 +132,26 @@ export class AsaasProvider implements PaymentProvider {
       if (e instanceof GatewayError && e.code === 'validation') return null; // sem Pix disponível para esta cobrança
       throw e;
     }
+  }
+
+  /**
+   * Cria a subconta da imobiliária (Marketplace do Asaas), usando a chave PRINCIPAL da plataforma.
+   * Mesmo contrato usado pelo Aidate. Pode exigir que o Asaas habilite Marketplace/Subcontas na conta principal.
+   * Retorna a chave da subconta (só é entregue nesta resposta) e a carteira que recebe o split.
+   */
+  async createSubAccount(p: SubAccountInput): Promise<{ id: string; walletId: string; apiKey: string }> {
+    const body: Record<string, unknown> = {
+      name: p.name, email: p.email, cpfCnpj: p.document,
+      companyType: p.document.length === 14 ? 'LIMITED' : undefined,
+      birthDate: p.document.length === 11 ? p.birthDate : undefined,
+      incomeValue: reais(p.monthlyRevenueCents), mobilePhone: p.phone,
+      address: p.street, addressNumber: p.number, complement: p.complement, province: p.neighborhood, postalCode: p.cep,
+    };
+    for (const k of Object.keys(body)) if (body[k] === undefined || body[k] === '') delete body[k];
+    // Sem repetição automática: criar conta é uma ação irreversível e o provedor não oferece chave de idempotência.
+    const r = await this.call<any>('POST', '/accounts', body);
+    if (!r?.id || !r?.walletId) throw new GatewayError('unknown', 'Resposta inválida do provedor ao criar a conta de recebimento.');
+    return { id: String(r.id), walletId: String(r.walletId), apiKey: String(r.apiKey ?? '') };
   }
 
   async cancelPayment(paymentId: string) {

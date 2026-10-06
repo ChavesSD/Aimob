@@ -9,6 +9,7 @@ export class FakeAsaas {
   readonly validKey: string;
   customers = new Map<string, any>();
   payments = new Map<string, any>();
+  accounts = new Map<string, any>();
   calls: Call[] = [];
   /** Latência artificial (ms) nas chamadas de criação, para forçar sobreposição entre requisições simultâneas. */
   delayMs = 0;
@@ -64,6 +65,13 @@ export class FakeAsaas {
       const ref = decodeURIComponent(path.split('externalReference=')[1].split('&')[0]);
       const data = [...this.payments.values()].filter((p) => p.externalReference === ref && !p.deleted);
       return json(200, { data, totalCount: data.length, hasMore: false });
+    }
+    if (method === 'POST' && path === '/accounts') {
+      if (!body?.name || !body?.cpfCnpj || !body?.email || !body?.incomeValue) return json(400, { errors: [{ description: 'Dados da conta incompletos.' }] });
+      const id = `acc_${++this.seq}`;
+      const acct = { id, walletId: `wallet_${this.seq}`, apiKey: `$aact_sub_${this.seq}_chave_da_subconta`, ...body };
+      this.accounts.set(id, acct);
+      return respond(200, acct);
     }
     const pix = path.match(/^\/payments\/([^/]+)\/pixQrCode$/);
     if (method === 'GET' && pix) {

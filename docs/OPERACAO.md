@@ -28,6 +28,7 @@ A API valida tudo isto na subida (`productionProblems` em `src/config.ts`) e sai
 | `MFA_ENC_KEY` (≥ 32, diferente do JWT) | criptografia dos segredos TOTP em repouso |
 | `DATA_ENC_KEY` (≥ 32) | criptografia de CPF/CNPJ e chaves de API de gateways em repouso |
 | `PUBLIC_API_URL` (https) | endereço público da API, usado no webhook de pagamentos (ver `docs/PAGAMENTOS.md`) |
+| `ASAAS_API_KEY`, `ASAAS_API_URL`, `ASAAS_USER_AGENT`, `ASAAS_WEBHOOK_TOKEN` (≥ 32) | conta principal do Asaas (mesmos nomes do Aidate); com a chave definida, o token do webhook passa a ser obrigatório em produção |
 | `BACKUP_ENC_KEY` (≥ 32) | criptografia dos arquivos de backup |
 | `IP_HASH_SALT` (≥ 16, não-exemplo) | hash de IP nos formulários públicos |
 | `CORS_ORIGIN` | origens permitidas do front |

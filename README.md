@@ -30,7 +30,7 @@ Usuários demo (senha = `SEED_PASSWORD`): `owner@exemplo.demo`, `manager@exemplo
 
 Locação e financeiro (contratos, cobranças geradas de forma idempotente, baixa com multa/juros, inadimplência, repasses com taxa de administração, reajuste anual com percentual informado, encerramento de contrato; valores em centavos e regras por contrato),
 CRM com score explicável, pipeline kanban, imóveis com saúde e vida do imóvel, agenda de visitas (conflito de horário e feedback),
-Pix/boleto pelo Asaas com baixa automática por webhook (**ainda não validado contra o sandbox real**: ver [docs/PAGAMENTOS.md](docs/PAGAMENTOS.md)),
+Boleto com Pix pelo Asaas no mesmo modelo do Aidate (subconta por imobiliária + split) com baixa automática por webhook (**não validado contra o Asaas real**: ver [docs/PAGAMENTOS.md](docs/PAGAMENTOS.md)),
 distribuição de leads (rodízio ou manual), automações quando → se → então (ações internas, com aprovação opcional),
 tarefas e avisos agrupados, painel "o que precisa da sua atenção", auditoria legível, permissões por perfil, isolamento por tenant,
 landing com diagnóstico (consentimento LGPD, honeypot, rate limit) e leitura via `GET /api/platform/diagnosticos`

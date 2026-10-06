@@ -65,6 +65,26 @@ export const MIGRATIONS: Migration[] = [
     );
     CREATE INDEX IF NOT EXISTS payment_events_idx ON payment_events (tenant_id, status, received_at DESC);
   ` },
+  { version: 4, name: 'conta de recebimento (subconta Asaas + split)', sql: `
+    ALTER TABLE payment_accounts ALTER COLUMN api_key_enc DROP NOT NULL;
+    ALTER TABLE payment_accounts ALTER COLUMN webhook_token_hash DROP NOT NULL;
+    ALTER TABLE payment_accounts ADD COLUMN IF NOT EXISTS mode text NOT NULL DEFAULT 'own_key' CHECK (mode IN ('own_key','platform_split'));
+    ALTER TABLE payment_accounts ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'active' CHECK (status IN ('active','provisioning'));
+    ALTER TABLE payment_accounts ADD COLUMN IF NOT EXISTS wallet_id text;
+    ALTER TABLE payment_accounts ADD COLUMN IF NOT EXISTS gateway_account_id text;
+    CREATE TABLE IF NOT EXISTS tenant_company (
+      tenant_id uuid PRIMARY KEY REFERENCES tenants(id),
+      name text NOT NULL,
+      document_enc text NOT NULL,
+      document_last2 text NOT NULL,
+      email text NOT NULL,
+      phone text,
+      birth_date date,
+      monthly_revenue_cents bigint NOT NULL CHECK (monthly_revenue_cents > 0),
+      street text, number text, complement text, neighborhood text, cep text,
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+  ` },
 ];
 
 export async function runMigrations(db: Db, migrations: Migration[] = MIGRATIONS): Promise<number[]> {

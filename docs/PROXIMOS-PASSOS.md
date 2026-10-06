@@ -1,15 +1,13 @@
-# Onde paramos (05/10/2026)
+# Onde paramos (06/10/2026)
 
-Último commit: `579ed62` (Pix/boleto via Asaas). Suíte: 113 testes passando em PGlite e em PostgreSQL 18 real (`npm test` e `npm run test:pg -w @aimob/api`).
+Suíte: 125 testes passando em PGlite e em PostgreSQL 18 real (`npm test` e `npm run test:pg -w @aimob/api`).
 
 ## Pronto
 Fundação multi-tenant, CRM/pipeline/agenda, imóveis, distribuição de leads, automações, locação e financeiro (manual), PostgreSQL + migrações, backup/restore criptografado, MFA, Pix/boleto via Asaas (testado só com duplo de teste), landing com diagnóstico.
 
-## Bloqueio externo
-Validar pagamentos no **sandbox real do Asaas** (precisa de uma chave de sandbox). Roteiro e pontos em aberto em `docs/PAGAMENTOS.md`:
-1. formato de multa/juros em `POST /payments`;
-2. valor pago em atraso no webhook;
-3. `PAYMENT_CONFIRMED` x `PAYMENT_RECEIVED` no boleto.
+## Pagamentos
+Alinhados ao modelo do Aidate (conta principal + subconta + split + webhook global). Decisão do usuário: não validar em sandbox agora. Pontos em aberto (tarifas com split, multa/juros, valor pago em atraso, `CONFIRMED` x `RECEIVED`) em `docs/PAGAMENTOS.md`.
+Para ativar em produção: definir `ASAAS_API_KEY`, `ASAAS_WEBHOOK_TOKEN` (e cadastrar o webhook no Asaas), habilitar Marketplace/Subcontas na conta principal.
 
 ## Candidatos para a próxima sessão
 1. **Portal do proprietário**: extrato, recebimentos, repasses, leads/visitas do imóvel.
