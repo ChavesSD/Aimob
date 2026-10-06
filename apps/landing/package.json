@@ -1,0 +1,9 @@
+{
+  "name": "@aimob/landing",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5275",
+    "build": "vite build"
+  }
+}
