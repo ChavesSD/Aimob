@@ -1,55 +1,81 @@
 # Aimob (nome provisório)
 
-Plataforma imobiliária multi-tenant. Projeto separado do Aidate. O nome é provisório e fica em um só lugar por app:
-`apps/api/src/config.ts`, `apps/web/src/brand.ts` e `apps/landing/main.js` (+ textos do `index.html`).
-
-## Apps
-
-| App | O que é | Porta dev |
-|-----|---------|-----------|
-| `apps/api` | API Fastify + TypeScript, PostgreSQL (PGlite em dev) | 3100 |
-| `apps/web` | Produto (React + Vite): painel, CRM, pipeline, imóveis, agenda, tarefas, automações | 5273/5274 |
-| `apps/landing` | Landing page estática com diagnóstico e métricas anônimas | 5275 |
+Plataforma de gestão imobiliária multi-tenant: CRM, imóveis, locação e financeiro, contratos, portais do proprietário e do inquilino.
+Projeto **separado do Aidate**. O nome é provisório e fica em um só lugar por app: `apps/api/src/config.ts`, `apps/web/src/brand.ts` e `apps/landing/main.js` (+ textos do `index.html`).
 
 ## Rodar em desenvolvimento
 
 ```bash
-npm install
-cp apps/api/.env.example apps/api/.env   # preencha JWT_SECRET e SEED_PASSWORD
-npm run seed -w @aimob/api               # imobiliária demo (marcada como demonstração)
-npm run dev -w @aimob/api
-npm run dev -w @aimob/web
-npm run dev -w @aimob/landing
-npm test                                  # testes da API (PGlite, rápido)
-npm run test:pg -w @aimob/api             # a mesma suíte contra um PostgreSQL real descartável (sem Docker)
+npm install                                  # só na primeira vez
+cp apps/api/.env.example apps/api/.env       # preencha JWT_SECRET e SEED_PASSWORD
+npm run seed -w @aimob/api                   # só na primeira vez: imobiliária demo (marcada como demonstração)
+npm run dev                                  # sobe API, produto e landing juntos (Ctrl+C encerra tudo)
 ```
 
-Usuários demo (senha = `SEED_PASSWORD`): `owner@exemplo.demo`, `manager@exemplo.demo`, `broker@exemplo.demo`, `corretor2@exemplo.demo`, `corretor3@exemplo.demo`.
+| O quê | Endereço |
+|---|---|
+| Produto (`apps/web`) | http://localhost:5273 (se ocupada, o Vite usa a próxima e avisa no log) |
+| Landing (`apps/landing`) | http://localhost:5275 |
+| API (`apps/api`) | http://127.0.0.1:3100 (`/health` e `/ready`) |
+
+Usuários demo (senha = `SEED_PASSWORD`): `owner@`, `manager@`, `financeiro@`, `broker@`, `corretor2@` e `corretor3@` com final `exemplo.demo`.
+Os dados demo começam com a exigência de MFA **desligada**; para demonstrá-la: `SEED_MFA_POLICY=admins npm run seed -w @aimob/api`.
+Para zerar os dados locais: pare tudo, apague `apps/api/data` e rode o `seed` de novo (afeta só o Aimob).
+
+```bash
+npm test                                     # testes da API no PGlite (rápido)
+npm run test:pg -w @aimob/api                # a mesma suíte contra um PostgreSQL real descartável (sem Docker)
+npm run mock:asaas -w @aimob/api             # Asaas simulado para desenvolver pagamentos (ver docs/PAGAMENTOS.md)
+```
+
+Estado atual: **180 testes**, todos passando nos dois bancos. Estrutura e decisões técnicas em [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
 
 ## O que existe hoje
 
-Locação e financeiro (contratos, cobranças geradas de forma idempotente, baixa com multa/juros, inadimplência, repasses com taxa de administração, reajuste anual com percentual informado, encerramento de contrato; valores em centavos e regras por contrato),
-CRM com score explicável, pipeline kanban, imóveis com saúde e vida do imóvel, agenda de visitas (conflito de horário e feedback),
-Boleto com Pix pelo Asaas no mesmo modelo do Aidate (subconta por imobiliária + split) com baixa automática por webhook (**não validado contra o Asaas real**: ver [docs/PAGAMENTOS.md](docs/PAGAMENTOS.md)),
-contratos em documento (modelos com variáveis, versões, aprovação em duas pessoas, PDF com hash; assinatura registrada manualmente: ver [docs/ASSINATURA.md](docs/ASSINATURA.md)),
-portal do inquilino (cobranças com estimativa de atraso e opções de pagamento, contrato em PDF; somente leitura),
-portal do proprietário (convite de uso único, imóveis, aluguéis, repasses e extrato CSV, somente leitura),
-distribuição de leads (rodízio ou manual), automações quando → se → então (ações internas, com aprovação opcional),
-tarefas e avisos agrupados, painel "o que precisa da sua atenção", auditoria legível, permissões por perfil, isolamento por tenant,
-landing com diagnóstico (consentimento LGPD, honeypot, rate limit) e leitura via `GET /api/platform/diagnosticos`
-(header `x-platform-token`, variável `PLATFORM_ADMIN_TOKEN`).
+**Comercial:** CRM com score de lead explicável, pipeline em kanban, distribuição de leads (rodízio ou manual), agenda de visitas (conflito de horário e feedback que realimenta o score),
+imóveis com saúde do anúncio e "vida do imóvel", automações quando → se → então (ações internas, com aprovação opcional), tarefas e avisos agrupados,
+painel "o que precisa da sua atenção" (cada alerta com uma ação).
+
+**Locação e financeiro:** contratos, cobranças geradas de forma idempotente, baixa com multa e juros, inadimplência, repasses com taxa de administração,
+reajuste anual (percentual informado pela gestão), encerramento de contrato. Dinheiro sempre em centavos inteiros; regras por contrato.
+
+**Pagamentos:** boleto com Pix pelo Asaas no mesmo modelo do Aidate (conta principal da plataforma + subconta por imobiliária + split de 100%), webhook global autenticado,
+baixa automática conservadora (valor divergente vai para revisão). **Não validado contra o Asaas real**: ver [docs/PAGAMENTOS.md](docs/PAGAMENTOS.md).
+
+**Contratos em documento:** modelos com variáveis, valor por extenso, versões imutáveis com hash, aprovação em duas pessoas, PDF com verificação de integridade,
+coleta de assinaturas em **modo manual** (o sistema não assina por ninguém). Ver [docs/ASSINATURA.md](docs/ASSINATURA.md).
+
+**Portais (somente leitura, convite de uso único):** proprietário (imóveis, interesse recebido, aluguéis, repasses, extrato CSV) e
+inquilino (cobranças com estimativa de atraso e opções de pagamento, contrato em PDF).
+
+**Segurança e operação:** isolamento por imobiliária, permissões por perfil (diretoria, gerência, financeiro, corretor, marketing, proprietário, inquilino) com negação por padrão,
+auditoria legível, MFA TOTP obrigatório por política, PostgreSQL com migrações, backup e restauração criptografados. Ver [docs/OPERACAO.md](docs/OPERACAO.md).
+
+**Landing:** diagnóstico com consentimento LGPD, honeypot e rate limit; métricas anônimas; leitura dos leads via `GET /api/platform/diagnosticos` (header `x-platform-token`, variável `PLATFORM_ADMIN_TOKEN`).
 
 ## O que NÃO existe (não prometer em material comercial)
 
-Cartão, split de pagamento e conciliação bancária (o repasse ao proprietário continua sendo registro manual; nada é transferido pelo sistema), busca automática de índices (IGP-M/IPCA), DIMOB e fiscal, conciliação bancária, integração com provedor de assinatura eletrônica, WhatsApp, IA, portais imobiliários, chamados de manutenção e documentos nos portais,
-app mobile, importação de dados, billing do SaaS e painel Admin SaaS. Pesquisa de mercado e legislação em `docs/research/PESQUISA-INICIAL.md`
-(vários pontos ali estão marcados como incertos e exigem validação jurídica).
+Integração com provedor de assinatura eletrônica; cartão e conciliação bancária; repasse automático ao proprietário (continua registro manual: nada é transferido pelo sistema);
+busca automática de índices (IGP-M/IPCA); DIMOB e fiscal; WhatsApp; IA; publicação em portais imobiliários; chamados de manutenção e documentos nos portais;
+envio automático de convites por e-mail/WhatsApp; app mobile; importação de dados; billing do SaaS e painel Admin SaaS.
+Pesquisa de mercado e legislação em [docs/research/PESQUISA-INICIAL.md](docs/research/PESQUISA-INICIAL.md) (vários pontos marcados como incertos; exigem validação jurídica).
+
+## Documentação
+
+| Documento | Para quê |
+|---|---|
+| [docs/ARQUITETURA.md](docs/ARQUITETURA.md) | estrutura do código, dados, segurança, decisões técnicas |
+| [docs/OPERACAO.md](docs/OPERACAO.md) | variáveis, banco, backup/restauração, RPO/RTO, autenticação, checklist de produção |
+| [docs/PAGAMENTOS.md](docs/PAGAMENTOS.md) | Asaas (modelo do Aidate), garantias, o que está confirmado e o que não |
+| [docs/ASSINATURA.md](docs/ASSINATURA.md) | contratos em documento, achados legais, o que falta |
+| [docs/PROXIMOS-PASSOS.md](docs/PROXIMOS-PASSOS.md) | onde paramos e candidatos para a próxima etapa |
+| [docs/research/PESQUISA-INICIAL.md](docs/research/PESQUISA-INICIAL.md) | pesquisa de mercado e legislação (com marcação de incertezas) |
 
 ## Pendências conhecidas
 
-- **Landing/SEO:** a página está com `noindex`. Ao definir o domínio: remover `noindex`, incluir `canonical`, `og:url`, `sitemap.xml` e `robots.txt`.
-- **Produção:** guia, variáveis, backup/restore e metas de RPO/RTO em [docs/OPERACAO.md](docs/OPERACAO.md). A varredura de leads parados roda em `setInterval`
-  dentro da API; com várias instâncias ela é repetida (idempotente, mas desperdiça trabalho): migrar para fila/agendador.
-- **Segurança:** MFA TOTP obrigatório por política (padrão: diretoria, gerência e financeiro; ver `docs/OPERACAO.md`). Faltam rotação de segredos, CSP validada em servidor real e monitoramento de erros.
-- **Pipelines:** etapas fixas no código; personalização por tenant (`pipeline_stages`) ainda não usada.
+- **Landing/SEO:** a página está com `noindex`. Ao definir o domínio: remover `noindex` e incluir `canonical`, `og:url`, `sitemap.xml` e `robots.txt`.
+- **Produção:** a varredura de leads parados e o reprocessamento de eventos de pagamento rodam em `setInterval` dentro da API; com várias instâncias o trabalho se repete (idempotente, mas desperdiça): migrar para fila/agendador.
+- **Segurança:** faltam rotação de segredos, CSP validada em servidor real e monitoramento de erros.
+- **Arquivos de contratos (PDFs):** ficam em `FILES_DIR` e **não entram no backup lógico do banco**; precisam de backup próprio.
+- **Pipelines:** etapas fixas no código; personalização por imobiliária (`pipeline_stages`) ainda não usada.
 - **Tabelas grandes:** `GET /api/leads` ordena por score com limite; falta paginação completa e colunas configuráveis.
