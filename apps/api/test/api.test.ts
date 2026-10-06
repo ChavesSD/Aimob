@@ -83,7 +83,7 @@ describe('isolamento entre tenants', () => {
     const r = await app.inject({ url: '/api/audit', headers: auth(a) });
     expect(r.statusCode).toBe(200);
     const d = (await app.inject({ url: '/api/dashboard', headers: auth(a) })).json();
-    expect(d.kpis.activeProperties).toBe(40);
+    expect(d.kpis.activeProperties).toBe(36); // 40 imóveis, 4 alugados
     expect(d.attention.length).toBeGreaterThan(0);
     expect(d.attention.every((x: any) => x.action.href)).toBe(true);
   });

@@ -122,6 +122,70 @@ CREATE TABLE IF NOT EXISTS landing_events (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS landing_events_idx ON landing_events (event, created_at);
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS owner_contact_id uuid REFERENCES contacts(id);
+CREATE TABLE IF NOT EXISTS rental_contracts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL REFERENCES tenants(id),
+  property_id uuid NOT NULL REFERENCES properties(id),
+  landlord_id uuid NOT NULL REFERENCES contacts(id),
+  renter_id uuid NOT NULL REFERENCES contacts(id),
+  rent_cents bigint NOT NULL CHECK (rent_cents > 0),
+  due_day int NOT NULL CHECK (due_day BETWEEN 1 AND 28),
+  start_date date NOT NULL,
+  end_date date NOT NULL,
+  adjustment_index text NOT NULL DEFAULT 'manual',
+  admin_fee_bps int NOT NULL DEFAULT 1000 CHECK (admin_fee_bps BETWEEN 0 AND 5000),
+  late_fee_bps int NOT NULL DEFAULT 200 CHECK (late_fee_bps BETWEEN 0 AND 2000),
+  interest_bps_month int NOT NULL DEFAULT 100 CHECK (interest_bps_month BETWEEN 0 AND 1000),
+  status text NOT NULL DEFAULT 'active',
+  created_by uuid,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  terminated_at timestamptz,
+  CHECK (end_date > start_date)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS one_active_contract_per_property ON rental_contracts (tenant_id, property_id) WHERE status = 'active';
+CREATE TABLE IF NOT EXISTS rental_charges (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL REFERENCES tenants(id),
+  contract_id uuid NOT NULL REFERENCES rental_contracts(id),
+  competence text NOT NULL,
+  due_date date NOT NULL,
+  amount_cents bigint NOT NULL CHECK (amount_cents > 0),
+  status text NOT NULL DEFAULT 'open',
+  paid_on date,
+  paid_principal_cents bigint,
+  late_fee_cents bigint,
+  interest_cents bigint,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (contract_id, competence)
+);
+CREATE INDEX IF NOT EXISTS rental_charges_idx ON rental_charges (tenant_id, status, due_date);
+CREATE TABLE IF NOT EXISTS rental_payouts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL REFERENCES tenants(id),
+  charge_id uuid NOT NULL UNIQUE REFERENCES rental_charges(id),
+  contract_id uuid NOT NULL REFERENCES rental_contracts(id),
+  landlord_id uuid NOT NULL REFERENCES contacts(id),
+  gross_cents bigint NOT NULL,
+  admin_fee_cents bigint NOT NULL,
+  net_cents bigint NOT NULL,
+  status text NOT NULL DEFAULT 'pending',
+  paid_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS rental_adjustments (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL REFERENCES tenants(id),
+  contract_id uuid NOT NULL REFERENCES rental_contracts(id),
+  applied_on date NOT NULL,
+  previous_cents bigint NOT NULL,
+  new_cents bigint NOT NULL,
+  percent_bps int NOT NULL,
+  index_name text NOT NULL,
+  note text,
+  applied_by uuid,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
 CREATE TABLE IF NOT EXISTS tasks (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL REFERENCES tenants(id),

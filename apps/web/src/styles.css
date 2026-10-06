@@ -51,6 +51,8 @@ h1 { font-size: 24px; margin: 0 0 var(--s1); font-weight: 650; }
 
 input, select { background: var(--surface-2); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius-sm); padding: 10px var(--s3); font: inherit; min-height: 40px; width: 100%; }
 label { display: block; font-size: 13px; color: var(--muted); margin-bottom: var(--s1); }
+input[type='checkbox'] { width: 18px; min-height: 18px; height: 18px; padding: 0; accent-color: var(--gold); flex: none; }
+label.check { display: flex; align-items: center; gap: var(--s2); color: var(--text); font-size: 14px; margin-bottom: 0; }
 
 table { width: 100%; border-collapse: collapse; }
 th { text-align: left; font-weight: 500; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; padding: var(--s2) var(--s3); border-bottom: 1px solid var(--border); }

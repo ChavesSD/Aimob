@@ -10,6 +10,7 @@ import { audit } from './audit.js';
 import { guard } from './guard.js';
 import { registerAutomationRoutes } from './routes/automation.js';
 import { registerPublicRoutes } from './routes/public.js';
+import { registerRentalRoutes } from './routes/rentals.js';
 import { fireTrigger } from './domain/automation.js';
 import { scoreLead } from './domain/scoring.js';
 import { propertyHealth } from './domain/propertyHealth.js';
@@ -371,7 +372,7 @@ export async function buildApp(db: Db): Promise<FastifyInstance> {
               (SELECT count(*)::int FROM visits WHERE tenant_id = $1 AND status = 'scheduled' AND scheduled_at >= now()) upcoming_visits,
               (SELECT coalesce(sum(budget_cents),0) FROM leads WHERE tenant_id = $1 AND status = 'open') pipeline_cents,
               (SELECT avg(extract(epoch FROM (first_response_at - created_at))/60) FROM leads WHERE tenant_id = $1 AND first_response_at IS NOT NULL) avg_first_response_min`);
-    const attention = await attentionInsights(db, tid);
+    const attention = await attentionInsights(db, tid, req.session!.role);
     return {
       kpis: { openLeads: k.open_leads, hotLeads: k.hot_leads, activeProperties: k.active_properties, upcomingVisits: k.upcoming_visits,
         pipelineCents: Number(k.pipeline_cents), avgFirstResponseMin: k.avg_first_response_min === null ? null : Math.round(Number(k.avg_first_response_min)) },
@@ -386,6 +387,7 @@ export async function buildApp(db: Db): Promise<FastifyInstance> {
 
   registerAutomationRoutes(app, db);
   registerPublicRoutes(app, db);
+  registerRentalRoutes(app, db);
 
   return app;
 }

@@ -1,0 +1,272 @@
+import { useState, type FormEvent } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { api } from '../api';
+import { useApi } from '../hooks';
+import { Empty, ErrorBox, Skeleton } from '../ui';
+
+const TABS: [string, string][] = [['contratos', 'Contratos'], ['cobrancas', 'Cobranças'], ['inadimplencia', 'Inadimplência'], ['repasses', 'Repasses'], ['reajustes', 'Reajustes']];
+// Financeiro sempre mostra centavos (o brl() global arredonda para reais inteiros, adequado só a KPIs grandes).
+const money = (c: number) => (c / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtDate = (iso: string) => iso.split('-').reverse().join('/');
+/** "2.200,50" -> 220050 centavos; devolve null se inválido. */
+function parseBRL(v: string): number | null {
+  const n = Number(v.replace(/\./g, '').replace(',', '.'));
+  return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null;
+}
+
+type Notify = (m: string) => void;
+
+export default function Rentals() {
+  const [params, setParams] = useSearchParams();
+  const tab = params.get('aba') ?? 'contratos';
+  const [msg, setMsg] = useState<string | null>(null);
+  return (
+    <>
+      <h1>Locação e financeiro</h1>
+      <p className="sub">Contratos, cobranças, inadimplência, repasses a proprietários e reajustes. Multa, juros e taxa de administração são definidos por contrato (valores padrão: 2%, 1% ao mês e 10%) e devem ser conferidos com o seu jurídico.</p>
+      <div role="tablist" aria-label="Seções" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+        {TABS.map(([k, l]) => (
+          <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'btn' : 'btn ghost'} onClick={() => { setParams({ aba: k }); setMsg(null); }}>{l}</button>
+        ))}
+      </div>
+      {msg && <div className="alert baixa" role="status">{msg}</div>}
+      {tab === 'contratos' && <Contracts notify={setMsg} />}
+      {tab === 'cobrancas' && <Charges notify={setMsg} />}
+      {tab === 'inadimplencia' && <Delinquency notify={setMsg} />}
+      {tab === 'repasses' && <Payouts notify={setMsg} />}
+      {tab === 'reajustes' && <Adjustments notify={setMsg} />}
+    </>
+  );
+}
+
+/* ---------- Contratos ---------- */
+interface Contract { id: string; property_title: string; property_code: string; landlord_name: string; renter_name: string; rent_cents: string; due_day: number; status: string; start_date: string; end_date: string; next_adjustment: string }
+
+function Contracts({ notify }: { notify: Notify }) {
+  const { data, error, loading, reload } = useApi<{ items: Contract[] }>('/api/rentals');
+  const [open, setOpen] = useState(false);
+  if (loading && !data) return <Skeleton rows={4} />;
+  if (error || !data) return <ErrorBox message={error ?? ''} onRetry={reload} />;
+  return (
+    <>
+      <button className="btn gold" onClick={() => setOpen(!open)} aria-expanded={open}>{open ? 'Fechar' : 'Novo contrato'}</button>
+      {open && <NewContract onDone={(m) => { notify(m); setOpen(false); reload(); }} />}
+      <div className="card table-wrap" style={{ marginTop: 16 }}>
+        {data.items.length === 0 ? <Empty text="Nenhum contrato de locação ainda." /> : (
+          <table>
+            <thead><tr><th>Imóvel</th><th>Proprietário</th><th>Inquilino</th><th>Aluguel</th><th>Vence dia</th><th>Próx. reajuste</th><th>Situação</th></tr></thead>
+            <tbody>{data.items.map((c) => (
+              <tr key={c.id}><td>#{c.property_code} {c.property_title}</td><td>{c.landlord_name}</td><td>{c.renter_name}</td><td>{money(Number(c.rent_cents))}</td>
+                <td>{c.due_day}</td><td>{fmtDate(c.next_adjustment)}</td><td>{c.status === 'active' ? 'Ativo' : 'Encerrado'}</td></tr>
+            ))}</tbody>
+          </table>
+        )}
+      </div>
+    </>
+  );
+}
+
+function ContactPicker({ kind, label, value, onChange }: { kind: 'owner' | 'renter'; label: string; value: string; onChange: (id: string) => void }) {
+  const { data, reload } = useApi<{ items: { id: string; name: string }[] }>(`/api/contacts?kind=${kind}`);
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+  async function add() {
+    try { const c = await api<{ id: string }>('/api/contacts', { method: 'POST', body: JSON.stringify({ name, kind }) }); setName(''); setAdding(false); reload(); onChange(c.id); }
+    catch (e: any) { setErr(e.message); }
+  }
+  const id = `cp-${kind}`;
+  return (
+    <div>
+      <label htmlFor={id}>{label}</label>
+      {adding ? (
+        <div style={{ display: 'flex', gap: 6 }}>
+          <input id={id} placeholder="Nome completo" value={name} onChange={(e) => setName(e.target.value)} />
+          <button type="button" className="btn" disabled={name.trim().length < 2} onClick={add}>Salvar</button>
+        </div>
+      ) : (
+        <select id={id} required value={value} onChange={(e) => (e.target.value === '__new' ? setAdding(true) : onChange(e.target.value))}>
+          <option value="">Selecione…</option>
+          {data?.items.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          <option value="__new">+ Cadastrar novo…</option>
+        </select>
+      )}
+      {err && <small role="alert" style={{ color: 'var(--danger)' }}>{err}</small>}
+    </div>
+  );
+}
+
+function NewContract({ onDone }: { onDone: (m: string) => void }) {
+  const props = useApi<{ items: { id: string; code: string; title: string; purpose: string; status: string }[] }>('/api/properties?limit=100');
+  const [f, setF] = useState({ propertyId: '', landlordId: '', renterId: '', rent: '', dueDay: '5', startDate: '', endDate: '' });
+  const [err, setErr] = useState<string | null>(null);
+  const set = (k: string, v: string) => setF((p) => ({ ...p, [k]: v }));
+  async function submit(e: FormEvent) {
+    e.preventDefault(); setErr(null);
+    const rentCents = parseBRL(f.rent);
+    if (!rentCents) { setErr('Informe o valor do aluguel, por exemplo 2.200,00.'); return; }
+    try {
+      const r = await api<{ chargesGenerated: number }>('/api/rentals', { method: 'POST', body: JSON.stringify({ propertyId: f.propertyId, landlordId: f.landlordId, renterId: f.renterId, rentCents, dueDay: Number(f.dueDay), startDate: f.startDate, endDate: f.endDate }) });
+      onDone(`Contrato criado. ${r.chargesGenerated} cobrança(s) gerada(s).`);
+    } catch (e: any) { setErr(e.message); }
+  }
+  const rentable = props.data?.items.filter((p) => p.purpose !== 'venda' && p.status === 'active') ?? [];
+  return (
+    <form className="card" onSubmit={submit} style={{ marginTop: 16 }}>
+      <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
+        <div><label htmlFor="c-prop">Imóvel (finalidade aluguel)</label>
+          <select id="c-prop" required value={f.propertyId} onChange={(e) => set('propertyId', e.target.value)}>
+            <option value="">Selecione…</option>{rentable.map((p) => <option key={p.id} value={p.id}>#{p.code} {p.title}</option>)}</select></div>
+        <ContactPicker kind="owner" label="Proprietário" value={f.landlordId} onChange={(v) => set('landlordId', v)} />
+        <ContactPicker kind="renter" label="Inquilino" value={f.renterId} onChange={(v) => set('renterId', v)} />
+        <div><label htmlFor="c-rent">Aluguel mensal (R$)</label><input id="c-rent" inputMode="decimal" required placeholder="2.200,00" value={f.rent} onChange={(e) => set('rent', e.target.value)} /></div>
+        <div><label htmlFor="c-day">Dia do vencimento (1 a 28)</label><input id="c-day" type="number" min={1} max={28} required value={f.dueDay} onChange={(e) => set('dueDay', e.target.value)} /></div>
+        <div><label htmlFor="c-start">Início</label><input id="c-start" type="date" required value={f.startDate} onChange={(e) => set('startDate', e.target.value)} /></div>
+        <div><label htmlFor="c-end">Fim</label><input id="c-end" type="date" required value={f.endDate} onChange={(e) => set('endDate', e.target.value)} /></div>
+      </div>
+      {err && <div className="error-box" role="alert" style={{ marginTop: 12 }}>{err}</div>}
+      <button className="btn gold" style={{ marginTop: 12 }}>Criar contrato</button>
+    </form>
+  );
+}
+
+/* ---------- Cobranças e baixa ---------- */
+interface Charge { id: string; competence: string; due_date: string; paid_on: string | null; status: string; amount_cents: number; property_title: string; property_code: string; renter_name: string; days_late: number; late_fee_cents: number; interest_cents: number; total_due_cents: number }
+const STATUS: Record<string, string> = { open: 'A vencer', overdue: 'Vencida', paid: 'Paga', canceled: 'Cancelada' };
+
+function PayRow({ c, onPaid, notify }: { c: Charge; onPaid: () => void; notify: Notify }) {
+  const [open, setOpen] = useState(false);
+  const [waive, setWaive] = useState(false);
+  const total = waive ? c.amount_cents : c.total_due_cents;
+  async function confirm() {
+    try {
+      const r = await api<{ totalCents: number; daysLate: number }>(`/api/charges/${c.id}/pay`, { method: 'POST', body: JSON.stringify({ waiveLateFees: waive }) });
+      notify(`Baixa registrada: ${money(r.totalCents)} recebidos${r.daysLate ? ` (${r.daysLate} dia(s) de atraso)` : ''}. Repasse gerado.`); onPaid();
+    } catch (e: any) { notify(e.message); }
+  }
+  return (
+    <>
+      <button className="btn ghost" aria-expanded={open} onClick={() => setOpen(!open)}>Dar baixa</button>
+      {open && (
+        <div className="card" style={{ position: 'absolute', right: 24, zIndex: 2, minWidth: 280, textAlign: 'left' }}>
+          <div>Principal: {money(c.amount_cents)}</div>
+          {c.days_late > 0 && <div>Multa: {money(waive ? 0 : c.late_fee_cents)} · Juros: {money(waive ? 0 : c.interest_cents)} <small>({c.days_late} dias)</small></div>}
+          <strong>Total a receber: {money(total)}</strong>
+          {c.days_late > 0 && <label className="check" style={{ display: 'flex', gap: 8, marginTop: 8 }}><input type="checkbox" checked={waive} onChange={(e) => setWaive(e.target.checked)} /> Dispensar multa e juros</label>}
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}><button className="btn gold" onClick={confirm}>Confirmar recebimento</button><button className="btn ghost" onClick={() => setOpen(false)}>Cancelar</button></div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function ChargeTable({ items, reload, notify }: { items: Charge[]; reload: () => void; notify: Notify }) {
+  if (!items.length) return <Empty text="Nenhuma cobrança nesta lista." />;
+  return (
+    <table>
+      <thead><tr><th>Competência</th><th>Imóvel</th><th>Inquilino</th><th>Vencimento</th><th>Valor</th><th>Situação</th><th /></tr></thead>
+      <tbody>{items.map((c) => (
+        <tr key={c.id}><td>{c.competence}</td><td>#{c.property_code} {c.property_title}</td><td>{c.renter_name}</td><td>{fmtDate(c.due_date)}</td>
+          <td>{money(c.amount_cents)}</td>
+          <td>{STATUS[c.status] ?? c.status}{c.days_late ? ` · ${c.days_late}d` : ''}{c.paid_on ? ` em ${fmtDate(c.paid_on)}` : ''}</td>
+          <td style={{ position: 'relative' }}>{c.status !== 'paid' && <PayRow c={c} onPaid={reload} notify={notify} />}</td></tr>
+      ))}</tbody>
+    </table>
+  );
+}
+
+function Charges({ notify }: { notify: Notify }) {
+  const [status, setStatus] = useState('');
+  const { data, error, loading, reload } = useApi<{ items: Charge[] }>(`/api/charges${status ? `?status=${status}` : ''}`);
+  return (
+    <>
+      <div style={{ maxWidth: 240, marginBottom: 12 }}><label htmlFor="st">Situação</label>
+        <select id="st" value={status} onChange={(e) => setStatus(e.target.value)}><option value="">Todas</option><option value="open">A vencer</option><option value="overdue">Vencidas</option><option value="paid">Pagas</option></select></div>
+      <div className="card table-wrap" style={{ overflow: 'visible' }}>
+        {loading && !data ? <Skeleton rows={5} /> : error || !data ? <ErrorBox message={error ?? ''} onRetry={reload} /> : <ChargeTable items={data.items} reload={reload} notify={notify} />}
+      </div>
+    </>
+  );
+}
+
+function Delinquency({ notify }: { notify: Notify }) {
+  const { data, error, loading, reload } = useApi<{ items: Charge[]; totals: { count: number; principalCents: number; lateFeeCents: number; interestCents: number; totalCents: number } }>('/api/delinquency');
+  if (loading && !data) return <Skeleton rows={4} />;
+  if (error || !data) return <ErrorBox message={error ?? ''} onRetry={reload} />;
+  const t = data.totals;
+  return (
+    <>
+      <div className="grid kpis">
+        <div className="card kpi"><div className="label">Cobranças vencidas</div><div className="value">{t.count}</div></div>
+        <div className="card kpi"><div className="label">Principal em atraso</div><div className="value">{money(t.principalCents)}</div></div>
+        <div className="card kpi"><div className="label">Multa + juros acumulados</div><div className="value">{money(t.lateFeeCents + t.interestCents)}</div></div>
+        <div className="card kpi"><div className="label">Total a receber hoje</div><div className="value">{money(t.totalCents)}</div></div>
+      </div>
+      <div className="card table-wrap" style={{ overflow: 'visible' }}>
+        {data.items.length === 0 ? <Empty text="Nenhuma inadimplência. Todas as cobranças vencidas foram recebidas." /> : <ChargeTable items={data.items} reload={reload} notify={notify} />}
+      </div>
+    </>
+  );
+}
+
+/* ---------- Repasses ---------- */
+function Payouts({ notify }: { notify: Notify }) {
+  const { data, error, loading, reload } = useApi<{ items: { id: string; landlord_name: string; property_title: string; competence: string; gross_cents: number; admin_fee_cents: number; net_cents: number }[]; totalNetCents: number }>('/api/payouts?status=pending');
+  async function pay(id: string) {
+    try { await api(`/api/payouts/${id}/pay`, { method: 'POST' }); notify('Repasse marcado como realizado.'); reload(); } catch (e: any) { notify(e.message); }
+  }
+  if (loading && !data) return <Skeleton rows={4} />;
+  if (error || !data) return <ErrorBox message={error ?? ''} onRetry={reload} />;
+  return (
+    <div className="card table-wrap">
+      <p style={{ marginTop: 0 }}>A repassar: <strong>{money(data.totalNetCents)}</strong>. Registro manual: o sistema ainda não executa a transferência bancária.</p>
+      {data.items.length === 0 ? <Empty text="Nenhum repasse pendente." /> : (
+        <table>
+          <thead><tr><th>Proprietário</th><th>Imóvel</th><th>Competência</th><th>Recebido</th><th>Taxa adm.</th><th>Líquido</th><th /></tr></thead>
+          <tbody>{data.items.map((p) => (
+            <tr key={p.id}><td>{p.landlord_name}</td><td>{p.property_title}</td><td>{p.competence}</td><td>{money(p.gross_cents)}</td><td>{money(p.admin_fee_cents)}</td><td><strong>{money(p.net_cents)}</strong></td>
+              <td><button className="btn ghost" onClick={() => pay(p.id)}>Marcar como repassado</button></td></tr>
+          ))}</tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+/* ---------- Reajustes ---------- */
+function Adjustments({ notify }: { notify: Notify }) {
+  const { data, error, loading, reload } = useApi<{ items: { id: string; property_title: string; renter_name: string; rent_cents: number; due_on: string; adjustment_index: string }[]; today: string }>('/api/adjustments/due');
+  const [pct, setPct] = useState<Record<string, string>>({});
+  async function apply(id: string, index: string) {
+    const n = Number((pct[id] ?? '').replace(',', '.'));
+    if (!Number.isFinite(n) || n <= 0 || n > 30) { notify('Informe o percentual do reajuste, entre 0,01 e 30.'); return; }
+    try {
+      const r = await api<{ previousCents: number; newCents: number }>(`/api/rentals/${id}/adjust`, { method: 'POST', body: JSON.stringify({ percentBps: Math.round(n * 100), indexName: index === 'manual' ? 'Manual' : index }) });
+      notify(`Aluguel reajustado de ${money(r.previousCents)} para ${money(r.newCents)}.`); reload();
+    } catch (e: any) { notify(e.message); }
+  }
+  if (loading && !data) return <Skeleton rows={4} />;
+  if (error || !data) return <ErrorBox message={error ?? ''} onRetry={reload} />;
+  return (
+    <div className="card table-wrap">
+      <p style={{ marginTop: 0 }}>Informe o percentual do índice (ex.: IGP-M ou IPCA acumulado em 12 meses) conferido na fonte oficial. O sistema não busca índices automaticamente.</p>
+      {data.items.length === 0 ? <Empty text="Nenhum contrato com reajuste nos próximos 60 dias." /> : (
+        <table>
+          <thead><tr><th>Imóvel</th><th>Inquilino</th><th>Aluguel atual</th><th>Aniversário</th><th>Reajuste (%)</th><th>Novo valor</th><th /></tr></thead>
+          <tbody>{data.items.map((c) => {
+            const n = Number((pct[c.id] ?? '').replace(',', '.'));
+            const preview = Number.isFinite(n) && n > 0 ? Math.round(c.rent_cents * (1 + n / 100)) : null;
+            return (
+              <tr key={c.id}><td>{c.property_title}</td><td>{c.renter_name}</td><td>{money(c.rent_cents)}</td>
+                <td>{fmtDate(c.due_on)}{c.due_on < data.today ? ' (atrasado)' : ''}</td>
+                <td style={{ maxWidth: 110 }}><input aria-label={`Percentual de reajuste de ${c.renter_name}`} inputMode="decimal" placeholder="4,50" value={pct[c.id] ?? ''} onChange={(e) => setPct({ ...pct, [c.id]: e.target.value })} /></td>
+                <td>{preview ? money(preview) : '—'}</td>
+                <td><button className="btn gold" onClick={() => apply(c.id, c.adjustment_index)}>Aplicar</button></td></tr>
+            );
+          })}</tbody>
+        </table>
+      )}
+      <p><Link to="/locacao?aba=contratos">Ver contratos</Link></p>
+    </div>
+  );
+}

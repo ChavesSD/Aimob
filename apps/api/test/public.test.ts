@@ -29,7 +29,9 @@ describe('diagnóstico público', () => {
     expect(r.statusCode).toBe(201);
     const { diagnosis } = r.json();
     expect(diagnosis).toMatch(/recuperação de leads/);
-    expect(diagnosis).toMatch(/Em desenvolvimento \(ainda indisponível\).*financeiro/);
+    expect(diagnosis).toMatch(/Também já podemos ajudar em: financeiro da locação/);
+    expect(diagnosis).toMatch(/registrados manualmente/); // a ressalva acompanha a menção, mesmo como dor secundária
+    expect(diagnosis).not.toMatch(/Em desenvolvimento/);
     const { rows } = await db.query<any>('SELECT phone, email, utm, ip_hash, consent_at FROM diagnostics');
     expect(rows).toHaveLength(1);
     expect(rows[0].phone).toBe('83999990000');
@@ -62,10 +64,13 @@ describe('diagnóstico público', () => {
     expect(codes.slice(5)).toEqual([429, 429]);
   });
 
-  it('diagnóstico de locação avisa que contratos e cobrança ainda não existem', () => {
+  it('diagnóstico de locação declara o que é manual e o que está só no roadmap', () => {
     const d = buildDiagnosis(['visitas'], { sells: false, rents: true });
-    expect(d).toMatch(/locação/);
-    expect(d).toMatch(/roadmap/);
+    expect(d).toMatch(/registro manual/);
+    expect(d).toMatch(/boleto\/Pix.*roadmap/);
+  });
+  it('dor de transparência para o proprietário continua marcada como indisponível', () => {
+    expect(buildDiagnosis(['leads_perdidos', 'transparencia_proprietario'], { sells: true, rents: false })).toMatch(/Em desenvolvimento \(ainda indisponível\).*proprietário/);
   });
 });
 
