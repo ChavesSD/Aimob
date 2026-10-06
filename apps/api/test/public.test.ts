@@ -68,7 +68,8 @@ describe('diagnóstico público', () => {
   it('diagnóstico de locação declara o que é manual e o que está só no roadmap', () => {
     const d = buildDiagnosis(['visitas'], { sells: false, rents: true });
     expect(d).toMatch(/registro manual/);
-    expect(d).toMatch(/boleto\/Pix.*roadmap/);
+    expect(d).toMatch(/Pix\/boleto com baixa automática está em validação/); // não vende como pronto o que não foi validado
+    expect(d).toMatch(/roadmap/);
   });
   it('dor de transparência para o proprietário continua marcada como indisponível', () => {
     expect(buildDiagnosis(['leads_perdidos', 'transparencia_proprietario'], { sells: true, rents: false })).toMatch(/Em desenvolvimento \(ainda indisponível\).*proprietário/);

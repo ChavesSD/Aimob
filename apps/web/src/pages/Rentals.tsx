@@ -40,7 +40,7 @@ export default function Rentals() {
 }
 
 /* ---------- Contratos ---------- */
-interface Contract { id: string; property_title: string; property_code: string; landlord_name: string; renter_name: string; rent_cents: string; due_day: number; status: string; start_date: string; end_date: string; next_adjustment: string }
+interface Contract { id: string; renter_id: string; renter_has_document: boolean; property_title: string; property_code: string; landlord_name: string; renter_name: string; rent_cents: string; due_day: number; status: string; start_date: string; end_date: string; next_adjustment: string }
 
 function Contracts({ notify }: { notify: Notify }) {
   const { data, error, loading, reload } = useApi<{ items: Contract[] }>('/api/rentals');
@@ -56,7 +56,7 @@ function Contracts({ notify }: { notify: Notify }) {
           <table>
             <thead><tr><th>Imóvel</th><th>Proprietário</th><th>Inquilino</th><th>Aluguel</th><th>Vence dia</th><th>Próx. reajuste</th><th>Situação</th></tr></thead>
             <tbody>{data.items.map((c) => (
-              <tr key={c.id}><td>#{c.property_code} {c.property_title}</td><td>{c.landlord_name}</td><td>{c.renter_name}</td><td>{money(Number(c.rent_cents))}</td>
+              <tr key={c.id}><td>#{c.property_code} {c.property_title}</td><td>{c.landlord_name}</td><td>{c.renter_name}{!c.renter_has_document && <DocumentField renterId={c.renter_id} onSaved={(m) => { notify(m); reload(); }} />}</td><td>{money(Number(c.rent_cents))}</td>
                 <td>{c.due_day}</td><td>{fmtDate(c.next_adjustment)}</td><td>{c.status === 'active' ? 'Ativo' : 'Encerrado'}</td></tr>
             ))}</tbody>
           </table>
@@ -130,8 +130,27 @@ function NewContract({ onDone }: { onDone: (m: string) => void }) {
   );
 }
 
+function DocumentField({ renterId, onSaved }: { renterId: string; onSaved: (m: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [doc, setDoc] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+  async function save(e: FormEvent) {
+    e.preventDefault(); setErr(null);
+    try { await api(`/api/contacts/${renterId}/document`, { method: 'PUT', body: JSON.stringify({ document: doc }) }); onSaved('CPF/CNPJ cadastrado.'); setOpen(false); }
+    catch (e: any) { setErr(e.message); }
+  }
+  if (!open) return <div><button className="btn ghost" style={{ minHeight: 28, padding: '0 8px', fontSize: 12 }} onClick={() => setOpen(true)}>Cadastrar CPF/CNPJ</button></div>;
+  return (
+    <form onSubmit={save} style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+      <input aria-label="CPF ou CNPJ do inquilino" inputMode="numeric" placeholder="CPF ou CNPJ" value={doc} onChange={(e) => setDoc(e.target.value)} style={{ minHeight: 32 }} />
+      <button className="btn" style={{ minHeight: 32 }}>Salvar</button>
+      {err && <small role="alert" style={{ color: 'var(--danger)' }}>{err}</small>}
+    </form>
+  );
+}
+
 /* ---------- Cobranças e baixa ---------- */
-interface Charge { id: string; competence: string; due_date: string; paid_on: string | null; status: string; amount_cents: number; property_title: string; property_code: string; renter_name: string; days_late: number; late_fee_cents: number; interest_cents: number; total_due_cents: number }
+interface Charge { id: string; competence: string; due_date: string; paid_on: string | null; status: string; amount_cents: number; property_title: string; property_code: string; renter_name: string; days_late: number; late_fee_cents: number; interest_cents: number; total_due_cents: number; payment: { status: string | null; url: string | null; boletoUrl: string | null; pixPayload: string | null; stale: boolean; reconciliation: string | null } | null }
 const STATUS: Record<string, string> = { open: 'A vencer', overdue: 'Vencida', paid: 'Paga', canceled: 'Cancelada' };
 
 function PayRow({ c, onPaid, notify }: { c: Charge; onPaid: () => void; notify: Notify }) {
@@ -160,15 +179,42 @@ function PayRow({ c, onPaid, notify }: { c: Charge; onPaid: () => void; notify: 
   );
 }
 
+function PaymentCell({ c, connected, onChanged, notify }: { c: Charge; connected: boolean; onChanged: () => void; notify: Notify }) {
+  const [busy, setBusy] = useState(false);
+  async function issue() {
+    setBusy(true);
+    try { await api(`/api/charges/${c.id}/issue`, { method: 'POST' }); notify('Pix/boleto emitido.'); onChanged(); }
+    catch (e: any) { notify(e.message); } finally { setBusy(false); }
+  }
+  if (c.status === 'paid' || c.status === 'canceled') return <span style={{ color: 'var(--muted)' }}>—</span>;
+  const p = c.payment;
+  if (!p) return connected ? <button className="btn ghost" disabled={busy} onClick={issue}>{busy ? 'Emitindo…' : 'Gerar Pix/boleto'}</button> : <span style={{ color: 'var(--muted)', fontSize: 12 }}>Conecte o Asaas</span>;
+  return (
+    <div style={{ display: 'grid', gap: 4, fontSize: 13 }}>
+      {p.stale && <span role="alert" style={{ color: 'var(--warn)' }}>Valor mudou (reajuste): reemita</span>}
+      {p.reconciliation === 'divergent' && <span role="alert" style={{ color: 'var(--danger)' }}>Pagamento com valor diferente: revisar</span>}
+      <span style={{ color: 'var(--muted)' }}>{p.status ?? 'emitido'}</span>
+      <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {p.url && <a href={p.url} target="_blank" rel="noopener noreferrer">Abrir cobrança</a>}
+        {p.pixPayload && <button type="button" className="btn ghost" style={{ minHeight: 28, padding: '0 8px', fontSize: 12 }} onClick={() => navigator.clipboard?.writeText(p.pixPayload!).then(() => notify('Pix copia e cola copiado.')).catch(() => notify('Não foi possível copiar automaticamente.'))}>Copiar Pix</button>}
+        {p.stale && <button type="button" className="btn gold" style={{ minHeight: 28, padding: '0 8px', fontSize: 12 }} disabled={busy} onClick={issue}>Reemitir</button>}
+      </span>
+    </div>
+  );
+}
+
 function ChargeTable({ items, reload, notify }: { items: Charge[]; reload: () => void; notify: Notify }) {
+  const account = useApi<{ connected: boolean }>('/api/payments/account');
+  const connected = !!account.data?.connected;
   if (!items.length) return <Empty text="Nenhuma cobrança nesta lista." />;
   return (
     <table>
-      <thead><tr><th>Competência</th><th>Imóvel</th><th>Inquilino</th><th>Vencimento</th><th>Valor</th><th>Situação</th><th /></tr></thead>
+      <thead><tr><th>Competência</th><th>Imóvel</th><th>Inquilino</th><th>Vencimento</th><th>Valor</th><th>Situação</th><th>Pagamento</th><th /></tr></thead>
       <tbody>{items.map((c) => (
         <tr key={c.id}><td>{c.competence}</td><td>#{c.property_code} {c.property_title}</td><td>{c.renter_name}</td><td>{fmtDate(c.due_date)}</td>
           <td>{money(c.amount_cents)}</td>
           <td>{STATUS[c.status] ?? c.status}{c.days_late ? ` · ${c.days_late}d` : ''}{c.paid_on ? ` em ${fmtDate(c.paid_on)}` : ''}</td>
+          <td><PaymentCell c={c} connected={connected} onChanged={reload} notify={notify} /></td>
           <td style={{ position: 'relative' }}>{c.status !== 'paid' && <PayRow c={c} onPaid={reload} notify={notify} />}</td></tr>
       ))}</tbody>
     </table>
@@ -180,8 +226,17 @@ function Charges({ notify }: { notify: Notify }) {
   const { data, error, loading, reload } = useApi<{ items: Charge[] }>(`/api/charges${status ? `?status=${status}` : ''}`);
   return (
     <>
-      <div style={{ maxWidth: 240, marginBottom: 12 }}><label htmlFor="st">Situação</label>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'end', flexWrap: 'wrap', marginBottom: 12 }}>
+      <button className="btn gold" onClick={async () => {
+        try {
+          const r = await api<{ issued: number; skippedNoDocument: number; failed: { message: string }[]; considered: number }>('/api/charges/issue-batch', { method: 'POST', body: JSON.stringify({ daysAhead: 15 }) });
+          notify(`${r.issued} Pix/boleto emitido(s) de ${r.considered} cobrança(s)${r.skippedNoDocument ? `; ${r.skippedNoDocument} sem CPF/CNPJ do inquilino` : ''}${r.failed.length ? `; ${r.failed.length} com falha (${r.failed[0].message})` : ''}.`);
+          reload();
+        } catch (e: any) { notify(e.message); }
+      }}>Emitir Pix/boleto dos próximos 15 dias</button>
+      <div style={{ maxWidth: 240 }}><label htmlFor="st">Situação</label>
         <select id="st" value={status} onChange={(e) => setStatus(e.target.value)}><option value="">Todas</option><option value="open">A vencer</option><option value="overdue">Vencidas</option><option value="paid">Pagas</option></select></div>
+      </div>
       <div className="card table-wrap" style={{ overflow: 'visible' }}>
         {loading && !data ? <Skeleton rows={5} /> : error || !data ? <ErrorBox message={error ?? ''} onRetry={reload} /> : <ChargeTable items={data.items} reload={reload} notify={notify} />}
       </div>

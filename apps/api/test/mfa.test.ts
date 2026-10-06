@@ -186,7 +186,7 @@ describe('fluxo de login com MFA', () => {
 });
 
 describe('configuração de produção', () => {
-  const good = { DATABASE_URL: 'postgres://u:p@h/db', JWT_SECRET: 'j'.repeat(40), IP_HASH_SALT: 'sal-aleatorio-bem-longo-123', CORS_ORIGIN: 'https://app.exemplo.com.br', MFA_ENC_KEY: 'k'.repeat(40), TRUST_PROXY: 'true' };
+  const good = { DATABASE_URL: 'postgres://u:p@h/db', JWT_SECRET: 'j'.repeat(40), IP_HASH_SALT: 'sal-aleatorio-bem-longo-123', CORS_ORIGIN: 'https://app.exemplo.com.br', MFA_ENC_KEY: 'k'.repeat(40), DATA_ENC_KEY: 'e'.repeat(40), PUBLIC_API_URL: 'https://api.exemplo.com.br', TRUST_PROXY: 'true' };
   it('aceita configuração completa', () => expect(productionProblems(good as any)).toEqual([]));
   it('recusa cada item ausente ou inseguro', () => {
     for (const k of Object.keys(good)) {
@@ -196,6 +196,7 @@ describe('configuração de produção', () => {
     expect(productionProblems({ ...good, IP_HASH_SALT: 'troque-este-sal' } as any)).toHaveLength(1);
     expect(productionProblems({ ...good, JWT_SECRET: 'curto' } as any)).toHaveLength(1);
     expect(productionProblems({ ...good, TRUST_PROXY: 'talvez' } as any)).toHaveLength(1);
+    expect(productionProblems({ ...good, PUBLIC_API_URL: 'http://inseguro.com' } as any)).toHaveLength(1); // webhook exige https
   });
   it('/ready confere o banco e /health responde sem depender dele', async () => {
     expect((await call('GET', '/health')).statusCode).toBe(200);

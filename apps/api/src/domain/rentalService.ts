@@ -101,6 +101,8 @@ export async function adjustContract(db: Db, tenantId: string, contractId: strin
     await tx.query(`UPDATE rental_contracts SET rent_cents = $3 WHERE tenant_id = $1 AND id = $2`, [tenantId, contractId, next]);
     // Só cobranças ainda não vencidas mudam de valor; o que já venceu mantém o valor original.
     await tx.query(`UPDATE rental_charges SET amount_cents = $3 WHERE tenant_id = $1 AND contract_id = $2 AND status = 'open' AND due_date > $4::date`, [tenantId, contractId, next, now]);
+    // Pix/boleto já emitidos com o valor antigo ficam "desatualizados": precisam ser reemitidos antes de cobrar.
+    await tx.query(`UPDATE rental_charges SET gateway_stale = true WHERE tenant_id = $1 AND contract_id = $2 AND status = 'open' AND due_date > $3::date AND gateway_id IS NOT NULL`, [tenantId, contractId, now]);
     await tx.query(
       `INSERT INTO rental_adjustments (tenant_id, contract_id, applied_on, previous_cents, new_cents, percent_bps, index_name, note, applied_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [tenantId, contractId, due, previous, next, percentBps, indexName, note, actorId]);

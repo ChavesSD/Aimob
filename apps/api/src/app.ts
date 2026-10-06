@@ -14,6 +14,7 @@ import { guard } from './guard.js';
 import { registerAutomationRoutes } from './routes/automation.js';
 import { registerPublicRoutes } from './routes/public.js';
 import { registerRentalRoutes } from './routes/rentals.js';
+import { registerPaymentRoutes } from './routes/payments.js';
 import { fireTrigger } from './domain/automation.js';
 import { scoreLead } from './domain/scoring.js';
 import { propertyHealth } from './domain/propertyHealth.js';
@@ -33,7 +34,7 @@ const LEAD_FILTERS: Record<string, string> = {
   'sem-responsavel': ' AND l.owner_id IS NULL',
 };
 
-export async function buildApp(db: Db, opts: { trustProxy?: boolean; logger?: boolean } = {}): Promise<FastifyInstance> {
+export async function buildApp(db: Db, opts: { trustProxy?: boolean; logger?: boolean; fetchImpl?: typeof fetch } = {}): Promise<FastifyInstance> {
   const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 1_000_000, trustProxy: opts.trustProxy ?? false });
   await app.register(helmet);
   await app.register(cors, { origin: process.env.CORS_ORIGIN?.split(',') ?? false });
@@ -41,7 +42,9 @@ export async function buildApp(db: Db, opts: { trustProxy?: boolean; logger?: bo
 
   app.setErrorHandler((err: any, _req, reply) => {
     if (err instanceof z.ZodError) {
-      return reply.code(400).send({ error: 'Dados inválidos', details: err.issues.map((i) => `${i.path.join('.')}: ${i.message}`) });
+      // Regras com mensagem própria (ex.: CPF inválido) viram o erro principal; as demais mantêm o texto genérico.
+      const custom = err.issues.find((i) => i.code === 'custom');
+      return reply.code(400).send({ error: custom?.message ?? 'Dados inválidos', details: err.issues.map((i) => `${i.path.join('.')}: ${i.message}`) });
     }
     if (err.statusCode && err.statusCode < 500) return reply.code(err.statusCode).send({ error: err.message });
     console.error(err);
@@ -396,7 +399,8 @@ export async function buildApp(db: Db, opts: { trustProxy?: boolean; logger?: bo
   registerMfaRoutes(app, db);
   registerAutomationRoutes(app, db);
   registerPublicRoutes(app, db);
-  registerRentalRoutes(app, db);
+  registerRentalRoutes(app, db, opts.fetchImpl);
+  registerPaymentRoutes(app, db, opts.fetchImpl);
 
   return app;
 }

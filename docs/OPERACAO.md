@@ -26,6 +26,8 @@ A API valida tudo isto na subida (`productionProblems` em `src/config.ts`) e sai
 | `DATABASE_URL` | PostgreSQL |
 | `JWT_SECRET` (≥ 32) | assinatura das sessões |
 | `MFA_ENC_KEY` (≥ 32, diferente do JWT) | criptografia dos segredos TOTP em repouso |
+| `DATA_ENC_KEY` (≥ 32) | criptografia de CPF/CNPJ e chaves de API de gateways em repouso |
+| `PUBLIC_API_URL` (https) | endereço público da API, usado no webhook de pagamentos (ver `docs/PAGAMENTOS.md`) |
 | `BACKUP_ENC_KEY` (≥ 32) | criptografia dos arquivos de backup |
 | `IP_HASH_SALT` (≥ 16, não-exemplo) | hash de IP nos formulários públicos |
 | `CORS_ORIGIN` | origens permitidas do front |
@@ -33,7 +35,7 @@ A API valida tudo isto na subida (`productionProblems` em `src/config.ts`) e sai
 | `PLATFORM_ADMIN_TOKEN` (≥ 24) | leitura dos diagnósticos da landing; sem ele a rota fica desligada |
 | `HOST`, `PORT` | endereço de escuta |
 
-Guarde segredos em um gerenciador de segredos, nunca no repositório. Perder `MFA_ENC_KEY` invalida os segundos fatores cadastrados; perder `BACKUP_ENC_KEY` torna os backups ilegíveis. Faça cópia segura de ambas, separada dos backups.
+Guarde segredos em um gerenciador de segredos, nunca no repositório. Perder `MFA_ENC_KEY` invalida os segundos fatores cadastrados; perder `DATA_ENC_KEY` torna ilegíveis CPF/CNPJ e chaves de gateway (será preciso recadastrar); perder `BACKUP_ENC_KEY` torna os backups ilegíveis. Faça cópia segura de ambas, separada dos backups.
 
 Saúde: `GET /health` (processo vivo) e `GET /ready` (processo + banco), este último para o balanceador. A API trata `SIGTERM`: para de aceitar, conclui as requisições e fecha o banco.
 
@@ -90,7 +92,8 @@ Referrer-Policy: strict-origin-when-cross-origin
 - [ ] Variáveis acima configuradas e a API sobe sem erros de configuração
 - [ ] `/ready` ligado ao balanceador; HTTPS obrigatório; `TRUST_PROXY=true`
 - [ ] Backup lógico agendado + restauração testada em ambiente de teste com dados reais
-- [ ] Segredos guardados com cópia segura (`MFA_ENC_KEY`, `BACKUP_ENC_KEY`, `JWT_SECRET`)
+- [ ] Segredos guardados com cópia segura (`MFA_ENC_KEY`, `DATA_ENC_KEY`, `BACKUP_ENC_KEY`, `JWT_SECRET`)
+- [ ] Pagamentos: roteiro de validação no sandbox do Asaas concluído (`docs/PAGAMENTOS.md`) antes de usar chave de produção
 - [ ] MFA ativado para todos os usuários `owner`/`manager`
 - [ ] Domínio definido; landing sem `noindex`, com canonical/sitemap/robots
 - [ ] Política de privacidade e termos revisados pelo jurídico (LGPD)

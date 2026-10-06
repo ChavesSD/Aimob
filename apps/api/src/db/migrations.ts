@@ -26,6 +26,45 @@ export const MIGRATIONS: Migration[] = [
       UNIQUE (user_id, code_hash)
     );
   ` },
+  { version: 3, name: 'pagamentos (gateway)', sql: `
+    ALTER TABLE contacts ADD COLUMN IF NOT EXISTS document_enc text;
+    ALTER TABLE contacts ADD COLUMN IF NOT EXISTS document_last2 text;
+    ALTER TABLE contacts ADD COLUMN IF NOT EXISTS gateway_customer_id text;
+    CREATE TABLE IF NOT EXISTS payment_accounts (
+      tenant_id uuid PRIMARY KEY REFERENCES tenants(id),
+      provider text NOT NULL DEFAULT 'asaas',
+      environment text NOT NULL DEFAULT 'sandbox' CHECK (environment IN ('sandbox','production')),
+      api_key_enc text NOT NULL,
+      webhook_token_hash text NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+    ALTER TABLE rental_charges ADD COLUMN IF NOT EXISTS gateway_id text;
+    ALTER TABLE rental_charges ADD COLUMN IF NOT EXISTS gateway_status text;
+    ALTER TABLE rental_charges ADD COLUMN IF NOT EXISTS gateway_url text;
+    ALTER TABLE rental_charges ADD COLUMN IF NOT EXISTS gateway_boleto_url text;
+    ALTER TABLE rental_charges ADD COLUMN IF NOT EXISTS gateway_pix_payload text;
+    ALTER TABLE rental_charges ADD COLUMN IF NOT EXISTS gateway_claimed_at timestamptz;
+    ALTER TABLE rental_charges ADD COLUMN IF NOT EXISTS gateway_stale boolean NOT NULL DEFAULT false;
+    ALTER TABLE rental_charges ADD COLUMN IF NOT EXISTS reconciliation text;
+    CREATE UNIQUE INDEX IF NOT EXISTS rental_charges_gateway_idx ON rental_charges (tenant_id, gateway_id) WHERE gateway_id IS NOT NULL;
+    CREATE TABLE IF NOT EXISTS payment_events (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id uuid NOT NULL REFERENCES tenants(id),
+      provider text NOT NULL,
+      event_id text NOT NULL,
+      event text NOT NULL,
+      payment_id text,
+      payload jsonb NOT NULL,
+      status text NOT NULL DEFAULT 'pending',
+      detail text,
+      attempts int NOT NULL DEFAULT 0,
+      received_at timestamptz NOT NULL DEFAULT now(),
+      processed_at timestamptz,
+      UNIQUE (tenant_id, provider, event_id)
+    );
+    CREATE INDEX IF NOT EXISTS payment_events_idx ON payment_events (tenant_id, status, received_at DESC);
+  ` },
 ];
 
 export async function runMigrations(db: Db, migrations: Migration[] = MIGRATIONS): Promise<number[]> {

@@ -6,26 +6,49 @@ import { audit } from '../audit.js';
 import { guard } from '../guard.js';
 import { adjustContract, generateCharges, nextAdjustmentDate, payCharge, today } from '../domain/rentalService.js';
 import { daysLate, lateCharges } from '../domain/money.js';
+import { encryptText } from '../domain/crypto.js';
+import { maskDocument, normalizeDocument } from '../domain/document.js';
+import { cancelGatewayPayments, getProvider } from '../payments/service.js';
 
 const uuid = z.string().uuid();
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((s) => !Number.isNaN(Date.parse(`${s}T00:00:00Z`)), 'Data inválida');
 const brl = (c: number) => (c / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-export function registerRentalRoutes(app: FastifyInstance, db: Db) {
+export function registerRentalRoutes(app: FastifyInstance, db: Db, fetchImpl?: typeof fetch) {
   // ---- Proprietários e inquilinos ----
   app.get('/api/contacts', { preHandler: guard('rentals', 'view') }, async (req) => {
     const q = z.object({ kind: z.enum(['owner', 'renter']) }).parse(req.query);
-    const items = await scoped(db, req.session!.tid).rows(
-      `SELECT id, name, phone, email, kind FROM contacts WHERE tenant_id = $1 AND kind = $2 AND deleted_at IS NULL ORDER BY name LIMIT 500`, [q.kind]);
-    return { items };
+    const rows = await scoped(db, req.session!.tid).rows<any>(
+      `SELECT id, name, phone, email, kind, document_last2 FROM contacts WHERE tenant_id = $1 AND kind = $2 AND deleted_at IS NULL ORDER BY name LIMIT 500`, [q.kind]);
+    // CPF/CNPJ nunca sai por inteiro: só uma máscara com os 2 últimos dígitos.
+    return { items: rows.map(({ document_last2, ...c }) => ({ ...c, hasDocument: !!document_last2, documentMask: maskDocument(document_last2) })) };
+  });
+
+  const documentField = z.string().transform((v, ctx) => {
+    const d = normalizeDocument(v);
+    if (!d) ctx.addIssue({ code: 'custom', message: 'CPF ou CNPJ inválido.' });
+    return d as string;
   });
 
   app.post('/api/contacts', { preHandler: guard('rentals', 'create') }, async (req, reply) => {
-    const b = z.object({ name: z.string().trim().min(2).max(120), phone: z.string().max(30).optional(), email: z.string().email().optional(), kind: z.enum(['owner', 'renter']) }).parse(req.body);
+    const b = z.object({ name: z.string().trim().min(2).max(120), phone: z.string().max(30).optional(), email: z.string().email().optional(), kind: z.enum(['owner', 'renter']),
+      document: documentField.optional() }).parse(req.body);
     const [c] = await scoped(db, req.session!.tid).rows(
-      `INSERT INTO contacts (tenant_id, name, phone, email, kind) VALUES ($1,$2,$3,$4,$5) RETURNING id, name, kind`, [b.name, b.phone ?? null, b.email ?? null, b.kind]);
+      `INSERT INTO contacts (tenant_id, name, phone, email, kind, document_enc, document_last2) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, name, kind`,
+      [b.name, b.phone ?? null, b.email ?? null, b.kind, b.document ? encryptText(b.document) : null, b.document ? b.document.slice(-2) : null]);
     await audit(db, req, { action: 'contact.create', resource: 'contact', resourceId: c.id, summary: `${b.kind === 'owner' ? 'Proprietário' : 'Inquilino'} ${b.name} cadastrado` });
     return reply.code(201).send(c);
+  });
+
+  app.put('/api/contacts/:id/document', { preHandler: guard('rentals', 'edit') }, async (req, reply) => {
+    const id = uuid.parse((req.params as any).id);
+    const b = z.object({ document: documentField }).parse(req.body);
+    const rows = await scoped(db, req.session!.tid).rows(
+      `UPDATE contacts SET document_enc = $2, document_last2 = $3, gateway_customer_id = NULL WHERE tenant_id = $1 AND id = $4 AND kind IN ('owner','renter') RETURNING id`,
+      [encryptText(b.document), b.document.slice(-2), id]);
+    if (!rows.length) return reply.code(404).send({ error: 'Contato não encontrado.' });
+    await audit(db, req, { action: 'contact.document', resource: 'contact', resourceId: id, summary: 'CPF/CNPJ cadastrado ou atualizado' }); // o número nunca vai ao log
+    return { ok: true };
   });
 
   // ---- Contratos ----
@@ -70,7 +93,7 @@ export function registerRentalRoutes(app: FastifyInstance, db: Db) {
     const rows = await scoped(db, req.session!.tid).rows<any>(
       `SELECT c.id, c.rent_cents, c.due_day, c.status, c.adjustment_index, c.admin_fee_bps, c.late_fee_bps, c.interest_bps_month,
               to_char(c.start_date,'YYYY-MM-DD') start_date, to_char(c.end_date,'YYYY-MM-DD') end_date,
-              p.title property_title, p.code property_code, l.name landlord_name, r.name renter_name,
+              p.title property_title, p.code property_code, l.name landlord_name, r.name renter_name, c.renter_id, (r.document_last2 IS NOT NULL) AS renter_has_document,
               (SELECT to_char(max(applied_on),'YYYY-MM-DD') FROM rental_adjustments a WHERE a.tenant_id = c.tenant_id AND a.contract_id = c.id) last_adj
          FROM rental_contracts c JOIN properties p ON p.id = c.property_id AND p.tenant_id = c.tenant_id
          JOIN contacts l ON l.id = c.landlord_id AND l.tenant_id = c.tenant_id JOIN contacts r ON r.id = c.renter_id AND r.tenant_id = c.tenant_id
@@ -94,16 +117,19 @@ export function registerRentalRoutes(app: FastifyInstance, db: Db) {
     const now = await today(db);
     const [c] = await s.rows<any>(`UPDATE rental_contracts SET status = 'ended', terminated_at = now() WHERE tenant_id = $1 AND id = $2 AND status = 'active' RETURNING id, property_id`, [id]);
     if (!c) return reply.code(404).send({ error: 'Contrato ativo não encontrado.' });
-    const cancelled = await s.rows(`UPDATE rental_charges SET status = 'canceled' WHERE tenant_id = $1 AND contract_id = $2 AND status = 'open' AND due_date > $3::date RETURNING id`, [id, now]);
+    const cancelled = await s.rows<{ id: string }>(`UPDATE rental_charges SET status = 'canceled' WHERE tenant_id = $1 AND contract_id = $2 AND status = 'open' AND due_date > $3::date RETURNING id`, [id, now]);
+    // Cobranças já emitidas (Pix/boleto) são canceladas no provedor; se falhar, a equipe é avisada.
+    const gw = await cancelGatewayPayments(db, req.session!.tid, cancelled.map((c) => c.id), await getProvider(db, req.session!.tid, fetchImpl).catch(() => null));
     await s.rows(`UPDATE properties SET status = 'active', updated_at = now() WHERE tenant_id = $1 AND id = $2 RETURNING id`, [c.property_id]);
     await audit(db, req, { action: 'rental.terminate', resource: 'rental', resourceId: id, summary: `Contrato encerrado; ${cancelled.length} cobrança(s) futura(s) cancelada(s). Cobranças vencidas permanecem em aberto.` });
-    return { ok: true, cancelled: cancelled.length };
+    return { ok: true, cancelled: cancelled.length, gatewayCancelled: gw.cancelled, gatewayFailed: gw.failed };
   });
 
   // ---- Cobranças ----
   const chargeSelect = `
     SELECT ch.id, ch.competence, ch.amount_cents, ch.status, to_char(ch.due_date,'YYYY-MM-DD') due_date, to_char(ch.paid_on,'YYYY-MM-DD') paid_on,
-           ch.late_fee_cents, ch.interest_cents, c.late_fee_bps, c.interest_bps_month, p.title property_title, p.code property_code, r.name renter_name,
+           ch.late_fee_cents, ch.interest_cents, c.late_fee_bps, c.interest_bps_month,
+           ch.gateway_id, ch.gateway_status, ch.gateway_url, ch.gateway_boleto_url, ch.gateway_pix_payload, ch.gateway_stale, ch.reconciliation, p.title property_title, p.code property_code, r.name renter_name,
            CASE WHEN ch.status = 'open' AND ch.due_date < (now() AT TIME ZONE 'America/Sao_Paulo')::date THEN 'overdue' ELSE ch.status END AS effective_status
       FROM rental_charges ch JOIN rental_contracts c ON c.id = ch.contract_id AND c.tenant_id = ch.tenant_id
       JOIN properties p ON p.id = c.property_id AND p.tenant_id = ch.tenant_id JOIN contacts r ON r.id = c.renter_id AND r.tenant_id = ch.tenant_id`;
@@ -116,7 +142,8 @@ export function registerRentalRoutes(app: FastifyInstance, db: Db) {
       return { id: r.id, competence: r.competence, due_date: r.due_date, paid_on: r.paid_on, status: r.effective_status, amount_cents: Number(r.amount_cents),
         property_title: r.property_title, property_code: r.property_code, renter_name: r.renter_name, days_late: days,
         late_fee_cents: r.status === 'paid' ? Number(r.late_fee_cents) : calc.lateFeeCents, interest_cents: r.status === 'paid' ? Number(r.interest_cents) : calc.interestCents,
-        total_due_cents: calc.totalCents };
+        total_due_cents: calc.totalCents,
+        payment: r.gateway_id ? { status: r.gateway_status, url: r.gateway_url, boletoUrl: r.gateway_boleto_url, pixPayload: r.gateway_pix_payload, stale: r.gateway_stale, reconciliation: r.reconciliation } : null };
     });
   }
 

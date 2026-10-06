@@ -30,6 +30,7 @@ Usuários demo (senha = `SEED_PASSWORD`): `owner@exemplo.demo`, `manager@exemplo
 
 Locação e financeiro (contratos, cobranças geradas de forma idempotente, baixa com multa/juros, inadimplência, repasses com taxa de administração, reajuste anual com percentual informado, encerramento de contrato; valores em centavos e regras por contrato),
 CRM com score explicável, pipeline kanban, imóveis com saúde e vida do imóvel, agenda de visitas (conflito de horário e feedback),
+Pix/boleto pelo Asaas com baixa automática por webhook (**ainda não validado contra o sandbox real**: ver [docs/PAGAMENTOS.md](docs/PAGAMENTOS.md)),
 distribuição de leads (rodízio ou manual), automações quando → se → então (ações internas, com aprovação opcional),
 tarefas e avisos agrupados, painel "o que precisa da sua atenção", auditoria legível, permissões por perfil, isolamento por tenant,
 landing com diagnóstico (consentimento LGPD, honeypot, rate limit) e leitura via `GET /api/platform/diagnosticos`
@@ -37,7 +38,7 @@ landing com diagnóstico (consentimento LGPD, honeypot, rate limit) e leitura vi
 
 ## O que NÃO existe (não prometer em material comercial)
 
-Boleto/Pix e gateway de pagamento (a baixa e o repasse são registros manuais; nada é cobrado nem transferido pelo sistema), busca automática de índices (IGP-M/IPCA), DIMOB e fiscal, conciliação bancária, contratos em documento e assinatura, WhatsApp, IA, portais imobiliários, portal do proprietário/inquilino,
+Cartão, split de pagamento e conciliação bancária (o repasse ao proprietário continua sendo registro manual; nada é transferido pelo sistema), busca automática de índices (IGP-M/IPCA), DIMOB e fiscal, conciliação bancária, contratos em documento e assinatura, WhatsApp, IA, portais imobiliários, portal do proprietário/inquilino,
 app mobile, importação de dados, billing do SaaS e painel Admin SaaS. Pesquisa de mercado e legislação em `docs/research/PESQUISA-INICIAL.md`
 (vários pontos ali estão marcados como incertos e exigem validação jurídica).
 

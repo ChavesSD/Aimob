@@ -12,7 +12,7 @@ import { MIGRATIONS } from './migrations.js';
 export const BACKUP_TABLES = [
   'tenants', 'users', 'contacts', 'properties', 'leads', 'visits', 'property_events', 'pipeline_stages', 'tenant_settings',
   'mfa_recovery_codes', 'tasks', 'notifications', 'automation_rules', 'automation_runs',
-  'rental_contracts', 'rental_charges', 'rental_payouts', 'rental_adjustments',
+  'rental_contracts', 'rental_charges', 'rental_payouts', 'rental_adjustments', 'payment_accounts', 'payment_events',
   'audit_log', 'diagnostics', 'landing_events',
 ] as const;
 const SERIAL_TABLES: Record<string, string> = { landing_events: 'id' };

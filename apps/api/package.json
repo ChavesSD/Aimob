@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test:pg": "cross-env TEST_PG=1 vitest run",
     "backup": "tsx --env-file=.env src/db/backup-cli.ts backup",
-    "restore": "tsx --env-file=.env src/db/backup-cli.ts restore"
+    "restore": "tsx --env-file=.env src/db/backup-cli.ts restore",
+    "mock:asaas": "tsx scripts/mock-asaas.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.8",

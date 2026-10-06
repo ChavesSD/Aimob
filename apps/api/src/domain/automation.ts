@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import { scoped } from '../db/client.js';
 import { assignRoundRobin } from './distribution.js';
+import { notifyUsers } from './notify.js';
 
 export const TRIGGERS = ['lead.created', 'lead.stage_changed', 'visit.completed', 'lead.idle'] as const;
 export type Trigger = (typeof TRIGGERS)[number];
@@ -101,15 +102,7 @@ export async function executeActions(db: Db, tid: string, actions: Action[], lea
         [leadId, assignee, a.title, String(a.dueInHours)]);
       done.push(`tarefa criada: "${a.title}"`);
     } else if (a.type === 'notify_managers') {
-      for (const uid of await managerIds(db, tid)) {
-        // Agrupa avisos idênticos ainda não lidos em um só (com contador) para não bombardear a gestão.
-        const merged = await s.rows(
-          `UPDATE notifications SET count = count + 1, created_at = now() WHERE tenant_id = $1 AND user_id = $2 AND message = $3 AND read_at IS NULL RETURNING id`,
-          [uid, a.message]);
-        if (!merged.length) {
-          await s.rows(`INSERT INTO notifications (tenant_id, user_id, message, href) VALUES ($1,$2,$3,$4)`, [uid, a.message, '/crm']);
-        }
-      }
+      await notifyUsers(db, tid, await managerIds(db, tid), a.message, '/crm'); // agrupa avisos idênticos não lidos
       done.push('gestores notificados');
     } else if (a.type === 'assign_round_robin') {
       const [cur] = await s.rows<{ owner_id: string | null }>(`SELECT owner_id FROM leads WHERE tenant_id = $1 AND id = $2`, [leadId]);
