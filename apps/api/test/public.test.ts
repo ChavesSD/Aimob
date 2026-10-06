@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { openDb, type Db } from '../src/db/client.js';
+import type { Db } from '../src/db/client.js';
+import { makeTestDb } from './helpers.js';
 import { buildApp } from '../src/app.js';
 import { buildDiagnosis } from '../src/domain/diagnosis.js';
 import { config } from '../src/config.js';
@@ -19,7 +20,7 @@ const post = (url: string, payload: unknown, ip = '10.0.0.1') =>
 
 beforeAll(async () => {
   config.jwtSecret = 'z'.repeat(40);
-  db = await openDb();
+  db = await makeTestDb();
   app = await buildApp(db);
 });
 

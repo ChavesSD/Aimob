@@ -130,7 +130,7 @@ async function seedRentals(db: Db, tid: string, props: string[]) {
 if (process.argv[1]?.endsWith('seed.ts')) {
   const pw = process.env.SEED_PASSWORD;
   if (!pw || pw.length < 12) throw new Error('Defina SEED_PASSWORD (mín. 12 caracteres) para criar os usuários demo');
-  const db = await openDb(config.dataDir);
+  const db = await openDb(config.databaseUrl || config.dataDir);
   const r = await seedDemo(db, { tenantName: 'Imobiliária Exemplo', password: pw, emailPrefix: 'exemplo' });
   console.log('Seed demo criado. Tenant:', r.tenantId, '— usuários: owner@exemplo.demo, manager@exemplo.demo, broker@exemplo.demo');
   await db.close();

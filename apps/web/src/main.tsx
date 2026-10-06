@@ -14,6 +14,7 @@ import Agenda from './pages/Agenda';
 import Tasks from './pages/Tasks';
 import Automations from './pages/Automations';
 import Rentals from './pages/Rentals';
+import Security from './pages/Security';
 
 function Shell() {
   const s = getSession();
@@ -32,6 +33,7 @@ function Shell() {
           <NavLink to="/agenda">Agenda</NavLink>
           {["owner", "manager", "finance", "broker"].includes(s.user.role) && <NavLink to="/locacao">Locação</NavLink>}
           <NavLink to="/tarefas">Tarefas</NavLink>
+          <NavLink to="/seguranca">Segurança</NavLink>
           {["owner", "manager"].includes(s.user.role) && <NavLink to="/automacoes">Automações</NavLink>}
         </nav>
         <div className="foot">
@@ -55,6 +57,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="pipeline" element={<Pipeline />} />
           <Route path="agenda" element={<Agenda />} />
           <Route path="tarefas" element={<Tasks />} />
+          <Route path="seguranca" element={<Security />} />
           <Route path="locacao" element={<Rentals />} />
           <Route path="automacoes" element={<Automations />} />
           <Route path="imoveis" element={<Properties />} />

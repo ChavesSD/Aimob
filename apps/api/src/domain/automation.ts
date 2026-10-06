@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import { scoped } from '../db/client.js';
-import { assignLead, pickBroker, withTenantLock } from './distribution.js';
+import { assignRoundRobin } from './distribution.js';
 
 export const TRIGGERS = ['lead.created', 'lead.stage_changed', 'visit.completed', 'lead.idle'] as const;
 export type Trigger = (typeof TRIGGERS)[number];
@@ -112,15 +112,9 @@ export async function executeActions(db: Db, tid: string, actions: Action[], lea
       }
       done.push('gestores notificados');
     } else if (a.type === 'assign_round_robin') {
-      const n = await withTenantLock(tid, async () => {
-        const [cur] = await s.rows<{ owner_id: string | null }>(`SELECT owner_id FROM leads WHERE tenant_id = $1 AND id = $2`, [leadId]);
-        if (cur?.owner_id) return 'já tinha responsável';
-        const b = await pickBroker(db, tid);
-        if (!b) return 'nenhum corretor disponível';
-        await assignLead(db, tid, leadId, b);
-        return 'atribuído por rodízio';
-      });
-      done.push(n);
+      const [cur] = await s.rows<{ owner_id: string | null }>(`SELECT owner_id FROM leads WHERE tenant_id = $1 AND id = $2`, [leadId]);
+      if (cur?.owner_id) done.push('já tinha responsável');
+      else done.push((await assignRoundRobin(db, tid, leadId, { onlyIfUnassigned: true })) ? 'atribuído por rodízio' : 'nenhum corretor disponível');
     }
   }
   return done.join('; ');

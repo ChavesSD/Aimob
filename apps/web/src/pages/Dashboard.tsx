@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { useApi } from '../hooks';
 import { brl } from '../api';
 import { Empty, ErrorBox, Skeleton } from '../ui';
+import { getSession } from '../api';
 
 interface Insight { id: string; severity: 'alta' | 'media' | 'baixa'; title: string; amountCents?: number; action: { label: string; href: string } }
 interface Dash {
@@ -11,6 +12,8 @@ interface Dash {
 
 export default function Dashboard() {
   const { data, error, loading, reload } = useApi<Dash>('/api/dashboard');
+  const me = useApi<{ mfaEnabled: boolean }>('/api/me');
+  const admin = ['owner', 'manager'].includes(getSession()?.user.role ?? '');
   if (loading) return <Skeleton rows={6} />;
   if (error || !data) return <ErrorBox message={error ?? 'Sem resposta do servidor.'} onRetry={reload} />;
   const k = data.kpis;
@@ -26,6 +29,9 @@ export default function Dashboard() {
     <>
       <h1>O que está acontecendo agora</h1>
       <p className="sub">Resumo da operação e o que precisa da sua atenção.</p>
+      {admin && me.data && !me.data.mfaEnabled && (
+        <div className="alert media" role="note"><div>Sua conta administra dados da imobiliária e ainda não tem verificação em duas etapas.</div><Link className="btn ghost" to="/seguranca">Proteger minha conta</Link></div>
+      )}
       <div className="grid kpis">
         {kpis.map(([label, value, hint]) => (
           <div className="card kpi" key={label}><div className="label">{label}</div><div className="value">{value}</div>{hint && <div className="hint">{hint}</div>}</div>

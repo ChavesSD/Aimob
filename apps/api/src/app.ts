@@ -5,7 +5,10 @@ import rateLimit from '@fastify/rate-limit';
 import { z } from 'zod';
 import type { Db } from './db/client.js';
 import { scoped } from './db/client.js';
-import { signToken, verifyPassword, verifyToken } from './auth.js';
+import { hashPassword, signMfaToken, signToken, verifyPassword, verifyToken } from './auth.js';
+import { registerMfaRoutes } from './routes/mfa.js';
+
+const DUMMY_HASH = hashPassword('senha-fictícia-para-igualar-o-tempo-de-resposta');
 import { audit } from './audit.js';
 import { guard } from './guard.js';
 import { registerAutomationRoutes } from './routes/automation.js';
@@ -18,7 +21,7 @@ import { attentionInsights } from './domain/insights.js';
 import { brand } from './config.js';
 import { PIPELINES } from './domain/pipeline.js';
 import { rescoreLead } from './domain/leadService.js';
-import { assignLead, distributeUnassigned, getMode, pickBroker, setMode, withTenantLock } from './domain/distribution.js';
+import { assignLead, assignRoundRobin, distributeUnassigned, getMode, setMode } from './domain/distribution.js';
 
 const uuid = z.string().uuid();
 
@@ -30,8 +33,8 @@ const LEAD_FILTERS: Record<string, string> = {
   'sem-responsavel': ' AND l.owner_id IS NULL',
 };
 
-export async function buildApp(db: Db): Promise<FastifyInstance> {
-  const app = Fastify({ logger: false, bodyLimit: 1_000_000 });
+export async function buildApp(db: Db, opts: { trustProxy?: boolean; logger?: boolean } = {}): Promise<FastifyInstance> {
+  const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 1_000_000, trustProxy: opts.trustProxy ?? false });
   await app.register(helmet);
   await app.register(cors, { origin: process.env.CORS_ORIGIN?.split(',') ?? false });
   await app.register(rateLimit, { global: false });
@@ -45,17 +48,26 @@ export async function buildApp(db: Db): Promise<FastifyInstance> {
     return reply.code(500).send({ error: 'Não conseguimos concluir esta ação agora. Tente novamente em instantes.' });
   });
 
+  // Liveness: o processo responde. Readiness: o banco também (usado pelo balanceador).
   app.get('/health', async () => ({ ok: true, brand: brand.name }));
+  app.get('/ready', async (_req, reply) => {
+    try { await db.query('SELECT 1'); return { ok: true }; }
+    catch { return reply.code(503).send({ ok: false, error: 'Banco de dados indisponível.' }); }
+  });
 
   // ---- Autenticação ----
   app.post('/api/auth/login', { config: { public: true, rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req, reply) => {
     const body = z.object({ email: z.string().email(), password: z.string().min(1) }).parse(req.body);
     const { rows } = await db.query<any>(
-      'SELECT id, tenant_id, role, password_hash, active, name FROM users WHERE lower(email) = lower($1)', [body.email]);
+      'SELECT id, tenant_id, role, password_hash, active, name, mfa_enabled FROM users WHERE lower(email) = lower($1)', [body.email]);
     const u = rows[0];
     // Compara sempre (hash fictício quando o usuário não existe) para não vazar existência por tempo.
-    const ok = u ? verifyPassword(body.password, u.password_hash) : false;
+    const ok = verifyPassword(body.password, u ? u.password_hash : DUMMY_HASH) && !!u;
     if (!u || !ok || !u.active) return reply.code(401).send({ error: 'E-mail ou senha incorretos.' });
+    if (u.mfa_enabled) {
+      // Senha correta, mas falta o segundo fator: devolve só um token curto que serve apenas para /api/auth/mfa/verify.
+      return { mfaRequired: true, mfaToken: await signMfaToken(u.id) };
+    }
     const token = await signToken({ sub: u.id, tid: u.tenant_id, role: u.role });
     req.session = { sub: u.id, tid: u.tenant_id, role: u.role };
     await audit(db, req, { action: 'auth.login', resource: 'user', resourceId: u.id });
@@ -188,11 +200,7 @@ export async function buildApp(db: Db): Promise<FastifyInstance> {
     // Lead cadastrado à mão fica com quem cadastrou; lead de canal (site/portal/whatsapp/indicação) segue a regra da imobiliária.
     let ownerNote = '';
     if (b.source !== 'manual' && (await getMode(db, req.session!.tid)) === 'roundrobin') {
-      await withTenantLock(req.session!.tid, async () => {
-        const broker = await pickBroker(db, req.session!.tid);
-        await assignLead(db, req.session!.tid, lead.id, broker);
-        if (broker) ownerNote = ' e distribuído por rodízio';
-      });
+      if (await assignRoundRobin(db, req.session!.tid, lead.id)) ownerNote = ' e distribuído por rodízio';
     }
     await audit(db, req, { action: 'lead.create', resource: 'lead', resourceId: lead.id, summary: `Lead ${b.name} criado (${b.source})${ownerNote}` });
     await fireTrigger(db, req.session!.tid, 'lead.created', lead.id);
@@ -385,6 +393,7 @@ export async function buildApp(db: Db): Promise<FastifyInstance> {
     return { items: await s.rows(`SELECT action, resource, resource_id, summary, ip, actor_id, created_at FROM audit_log WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 100`) };
   });
 
+  registerMfaRoutes(app, db);
   registerAutomationRoutes(app, db);
   registerPublicRoutes(app, db);
   registerRentalRoutes(app, db);

@@ -32,5 +32,23 @@ export async function verifyToken(token: string): Promise<Session> {
     algorithms: ['HS256'],
     requiredClaims: ['exp', 'sub'],
   });
-  return { sub: String(payload.sub), tid: String(payload.tid), role: String(payload.role) };
+  // Sessão exige tid e papel e nenhum "purpose": o token intermediário do MFA nunca vale como sessão.
+  if (payload.purpose || typeof payload.tid !== 'string' || typeof payload.role !== 'string') throw new Error('Token de sessão inválido');
+  return { sub: String(payload.sub), tid: payload.tid, role: payload.role };
+}
+
+/** Token curto (5 min) emitido depois da senha e antes do código MFA. Só serve para /api/auth/mfa/verify. */
+export async function signMfaToken(userId: string): Promise<string> {
+  return new SignJWT({ purpose: 'mfa' })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setSubject(userId)
+    .setIssuedAt()
+    .setExpirationTime('5m')
+    .sign(requireJwtSecret());
+}
+
+export async function verifyMfaToken(token: string): Promise<string> {
+  const { payload } = await jwtVerify(token, requireJwtSecret(), { algorithms: ['HS256'], requiredClaims: ['exp', 'sub'] });
+  if (payload.purpose !== 'mfa') throw new Error('Token MFA inválido');
+  return String(payload.sub);
 }

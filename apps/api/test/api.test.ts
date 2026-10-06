@@ -1,12 +1,13 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { openDb, type Db } from '../src/db/client.js';
+import type { Db } from '../src/db/client.js';
+import { makeTestDb } from './helpers.js';
 import { buildApp } from '../src/app.js';
 import { seedDemo } from '../src/db/seed.js';
 import { scoreLead } from '../src/domain/scoring.js';
 import { propertyHealth } from '../src/domain/propertyHealth.js';
 import { signToken } from '../src/auth.js';
-import { withTenantLock } from '../src/domain/distribution.js';
+import { assignRoundRobin } from '../src/domain/distribution.js';
 import { config } from '../src/config.js';
 
 const PW = 'senha-de-teste-123';
@@ -26,7 +27,7 @@ const auth = (t: string) => ({ authorization: `Bearer ${t}` });
 
 beforeAll(async () => {
   config.jwtSecret = 'x'.repeat(40);
-  db = await openDb();
+  db = await makeTestDb();
   app = await buildApp(db);
   await seedDemo(db, { tenantName: 'A', password: PW, emailPrefix: 'a' });
   await seedDemo(db, { tenantName: 'B', password: PW, emailPrefix: 'b' });
@@ -253,15 +254,20 @@ describe('distribuição de leads', () => {
     expect(log.some((a: any) => /8 lead\(s\) distribuído\(s\)/.test(a.summary ?? ''))).toBe(true);
   });
 
-  it('withTenantLock serializa tarefas do mesmo tenant e não bloqueia outro tenant', async () => {
-    const log: string[] = [];
-    const task = (name: string, ms: number) => async () => { log.push(`${name}:start`); await new Promise((r) => setTimeout(r, ms)); log.push(`${name}:end`); };
-    await Promise.all([withTenantLock('t1', task('a', 30)), withTenantLock('t1', task('b', 5)), withTenantLock('t2', task('c', 5))]);
-    expect(log.indexOf('a:end')).toBeLessThan(log.indexOf('b:start'));
-    expect(log.indexOf('c:end')).toBeLessThan(log.indexOf('a:end'));
-    // uma tarefa que falha não trava a fila
-    await expect(withTenantLock('t3', async () => { throw new Error('x'); })).rejects.toThrow('x');
-    await expect(withTenantLock('t3', async () => 'ok')).resolves.toBe('ok');
+  it('atribuições simultâneas por rodízio ficam balanceadas (lock consultivo do banco)', async () => {
+    const t = await login('owner@a.demo');
+    await app.inject({ method: 'PUT', url: '/api/settings/distribution', headers: auth(t), payload: { mode: 'roundrobin' } });
+    const tid = (await db.query<any>(`SELECT tenant_id FROM users WHERE email = 'owner@a.demo'`)).rows[0].tenant_id;
+    const ids: string[] = [];
+    for (let i = 0; i < 12; i++) ids.push((await db.query<any>(
+      `INSERT INTO contacts (tenant_id, name) VALUES ($1, $2) RETURNING id`, [tid, `Conc ${i}`])).rows[0].id);
+    const leads = await Promise.all(ids.map(async (cid) => (await db.query<any>(
+      `INSERT INTO leads (tenant_id, contact_id, source) VALUES ($1, $2, 'site') RETURNING id`, [tid, cid])).rows[0].id));
+    const owners = await Promise.all(leads.map((l) => assignRoundRobin(db, tid, l)));
+    const counts = new Map<string, number>();
+    owners.forEach((o) => counts.set(o!, (counts.get(o!) ?? 0) + 1));
+    expect(counts.size).toBe(3);
+    expect(Math.max(...counts.values()) - Math.min(...counts.values())).toBeLessThanOrEqual(1);
   });
 
   it('leads simultâneos não escolhem o mesmo corretor (lock por tenant)', async () => {

@@ -22,7 +22,9 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     headers: { ...(init.body ? { 'content-type': 'application/json' } : {}), ...(s ? { authorization: `Bearer ${s.token}` } : {}), ...init.headers },
   });
   const body = await res.json().catch(() => ({}));
-  if (res.status === 401 && path !== '/api/auth/login') { setSession(null); location.assign('/login'); }
+  // 401 numa rota comum = sessão expirada. Nas rotas de autenticação (login, código MFA) 401 é "credencial incorreta":
+  // o erro precisa aparecer na própria tela, sem recarregar.
+  if (res.status === 401 && !path.startsWith('/api/auth/')) { setSession(null); location.assign('/login'); }
   if (!res.ok) throw new ApiError(body.error ?? 'Não conseguimos concluir esta ação agora.', res.status);
   return body as T;
 }

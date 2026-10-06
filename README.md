@@ -20,7 +20,8 @@ npm run seed -w @aimob/api               # imobiliária demo (marcada como demon
 npm run dev -w @aimob/api
 npm run dev -w @aimob/web
 npm run dev -w @aimob/landing
-npm test                                  # testes da API
+npm test                                  # testes da API (PGlite, rápido)
+npm run test:pg -w @aimob/api             # a mesma suíte contra um PostgreSQL real descartável (sem Docker)
 ```
 
 Usuários demo (senha = `SEED_PASSWORD`): `owner@exemplo.demo`, `manager@exemplo.demo`, `broker@exemplo.demo`, `corretor2@exemplo.demo`, `corretor3@exemplo.demo`.
@@ -43,8 +44,8 @@ app mobile, importação de dados, billing do SaaS e painel Admin SaaS. Pesquisa
 ## Pendências conhecidas
 
 - **Landing/SEO:** a página está com `noindex`. Ao definir o domínio: remover `noindex`, incluir `canonical`, `og:url`, `sitemap.xml` e `robots.txt`.
-- **Produção:** trocar PGlite por PostgreSQL real (o SQL já é compatível); o lock de distribuição é por instância (ver `domain/distribution.ts`);
-  a varredura de leads parados roda em `setInterval` dentro da API (migrar para fila quando houver mais de uma instância).
-- **Segurança:** MFA, rotação de segredos, CSP da landing e backup/restore ainda não implementados.
+- **Produção:** guia, variáveis, backup/restore e metas de RPO/RTO em [docs/OPERACAO.md](docs/OPERACAO.md). A varredura de leads parados roda em `setInterval`
+  dentro da API; com várias instâncias ela é repetida (idempotente, mas desperdiça trabalho): migrar para fila/agendador.
+- **Segurança:** MFA TOTP já existe (não é obrigatório por papel). Faltam rotação de segredos, CSP validada em servidor real e monitoramento de erros.
 - **Pipelines:** etapas fixas no código; personalização por tenant (`pipeline_stages`) ainda não usada.
 - **Tabelas grandes:** `GET /api/leads` ordena por score com limite; falta paginação completa e colunas configuráveis.

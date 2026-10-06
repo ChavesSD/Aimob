@@ -1,12 +1,33 @@
 import { buildApp } from './app.js';
 import { openDb } from './db/client.js';
-import { config, requireJwtSecret } from './config.js';
+import { config, productionProblems, requireJwtSecret } from './config.js';
 import { sweepIdle } from './domain/automation.js';
 
+if (config.isProduction) {
+  const problems = productionProblems();
+  if (problems.length) {
+    console.error('Configuração de produção inválida:\n - ' + problems.join('\n - '));
+    process.exit(1);
+  }
+}
 requireJwtSecret(); // falha na subida se o segredo estiver ausente
-const db = await openDb(config.dataDir);
-const app = await buildApp(db);
+
+const db = await openDb(config.databaseUrl || config.dataDir);
+const app = await buildApp(db, { trustProxy: config.trustProxy, logger: config.isProduction });
+
 // Gatilhos por tempo (lead parado): varredura a cada 5 minutos. Idempotente, então repetir é seguro.
-setInterval(() => { sweepIdle(db).catch((e) => console.error('sweep falhou', e)); }, 5 * 60_000).unref();
-await app.listen({ port: config.port, host: '127.0.0.1' });
-console.log(`API ouvindo em http://127.0.0.1:${config.port}`);
+const sweep = setInterval(() => { sweepIdle(db).catch((e) => console.error('sweep falhou', e)); }, 5 * 60_000);
+sweep.unref();
+
+// Encerramento limpo: para de aceitar requisições, espera as em andamento e fecha o banco.
+for (const sig of ['SIGTERM', 'SIGINT'] as const) {
+  process.on(sig, async () => {
+    clearInterval(sweep);
+    await app.close().catch(() => undefined);
+    await db.close().catch(() => undefined);
+    process.exit(0);
+  });
+}
+
+await app.listen({ port: config.port, host: process.env.HOST ?? '127.0.0.1' });
+console.log(`API ouvindo em http://${process.env.HOST ?? '127.0.0.1'}:${config.port} (${db.kind})`);

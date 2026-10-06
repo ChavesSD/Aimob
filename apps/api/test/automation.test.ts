@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { openDb, type Db } from '../src/db/client.js';
+import type { Db } from '../src/db/client.js';
+import { makeTestDb } from './helpers.js';
 import { buildApp } from '../src/app.js';
 import { seedDemo } from '../src/db/seed.js';
 import { evaluate, fireTrigger } from '../src/domain/automation.js';
@@ -30,7 +31,7 @@ const runs = async (t: string) => (await inject(t, 'GET', '/api/automations')).j
 
 beforeAll(async () => {
   config.jwtSecret = 'y'.repeat(40);
-  db = await openDb();
+  db = await makeTestDb();
   app = await buildApp(db);
   await seedDemo(db, { tenantName: 'A', password: PW, emailPrefix: 'a' });
   await seedDemo(db, { tenantName: 'B', password: PW, emailPrefix: 'b' });

@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { openDb, type Db } from '../src/db/client.js';
+import type { Db } from '../src/db/client.js';
+import { makeTestDb } from './helpers.js';
 import { buildApp } from '../src/app.js';
 import { seedDemo } from '../src/db/seed.js';
 import { lateCharges } from '../src/domain/money.js';
@@ -24,7 +25,7 @@ const call = (t: string, method: any, url: string, payload?: unknown) =>
 
 beforeAll(async () => {
   config.jwtSecret = 'r'.repeat(40);
-  db = await openDb();
+  db = await makeTestDb();
   app = await buildApp(db);
   await seedDemo(db, { tenantName: 'A', password: PW, emailPrefix: 'a' });
   await seedDemo(db, { tenantName: 'B', password: PW, emailPrefix: 'b' });
