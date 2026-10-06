@@ -5,7 +5,7 @@ import { useApi } from '../hooks';
 import { Empty, ErrorBox, Skeleton } from '../ui';
 import Documents from './Documents';
 
-const TABS: [string, string][] = [['contratos', 'Contratos'], ['cobrancas', 'Cobranças'], ['inadimplencia', 'Inadimplência'], ['repasses', 'Repasses'], ['reajustes', 'Reajustes'], ['proprietarios', 'Proprietários'], ['documentos', 'Documentos']];
+const TABS: [string, string][] = [['contratos', 'Contratos'], ['cobrancas', 'Cobranças'], ['inadimplencia', 'Inadimplência'], ['repasses', 'Repasses'], ['reajustes', 'Reajustes'], ['proprietarios', 'Acesso ao portal'], ['documentos', 'Documentos']];
 // Financeiro sempre mostra centavos (o brl() global arredonda para reais inteiros, adequado só a KPIs grandes).
 const money = (c: number) => (c / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDate = (iso: string) => iso.split('-').reverse().join('/');
@@ -333,7 +333,9 @@ function Adjustments({ notify }: { notify: Notify }) {
 interface OwnerAccess { id: string; name: string; email: string | null; hasUser: boolean; accepted: boolean; inviteExpiresAt: string | null; properties: number }
 
 function Owners({ notify }: { notify: Notify }) {
-  const { data, error, loading, reload } = useApi<{ items: OwnerAccess[] }>('/api/portal/access');
+  const [kind, setKind] = useState<'owner' | 'renter'>('owner');
+  const { data, error, loading, reload } = useApi<{ items: OwnerAccess[] }>(`/api/portal/access?kind=${kind}`);
+  const who = kind === 'owner' ? 'proprietário' : 'inquilino';
   const [emailFor, setEmailFor] = useState<string | null>(null);
   const [email, setEmail] = useState('');
   const [invite, setInvite] = useState<{ name: string; url: string } | null>(null);
@@ -347,7 +349,7 @@ function Owners({ notify }: { notify: Notify }) {
     } catch (err: any) { notify(err.message); }
   }
   async function revoke(o: OwnerAccess) {
-    if (!confirm(`Revogar o acesso de ${o.name} ao portal? Ele será desconectado na hora.`)) return;
+    if (!confirm(`Revogar o acesso de ${o.name} ao portal? A pessoa será desconectada na hora.`)) return;
     try { await api(`/api/portal/access/${o.id}`, { method: 'DELETE' }); notify('Acesso revogado.'); reload(); } catch (err: any) { notify(err.message); }
   }
   if (loading && !data) return <Skeleton rows={4} />;
@@ -357,17 +359,21 @@ function Owners({ notify }: { notify: Notify }) {
       {invite && (
         <section className="card" style={{ borderColor: 'var(--gold)', marginBottom: 16 }} aria-labelledby="inv">
           <h2 id="inv" style={{ marginTop: 0, fontSize: 16 }}>Link de acesso de {invite.name}</h2>
-          <p>Envie este link ao proprietário (WhatsApp ou e-mail). Ele vale por 7 dias, funciona uma única vez e <strong>só é mostrado agora</strong>.</p>
+          <p>Envie este link à pessoa (WhatsApp ou e-mail). Ele vale por 7 dias, funciona uma única vez e <strong>só é mostrado agora</strong>.</p>
           <code style={{ wordBreak: 'break-all', display: 'block' }}>{invite.url}</code>
           <button className="btn gold" style={{ marginTop: 8 }} onClick={() => navigator.clipboard?.writeText(invite.url).then(() => notify('Link copiado.')).catch(() => notify('Não foi possível copiar automaticamente.'))}>Copiar link</button>{' '}
           <button className="btn ghost" onClick={() => setInvite(null)}>Fechar</button>
         </section>
       )}
       <div className="card table-wrap">
-        <p style={{ marginTop: 0 }}>Dê aos proprietários acesso ao portal para acompanharem imóveis, aluguéis e repasses sem precisar ligar.</p>
-        {data.items.length === 0 ? <Empty text="Nenhum proprietário cadastrado ainda." /> : (
+        <div role="tablist" aria-label="Tipo de acesso" style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          <button role="tab" aria-selected={kind === 'owner'} className={kind === 'owner' ? 'btn' : 'btn ghost'} onClick={() => setKind('owner')}>Proprietários</button>
+          <button role="tab" aria-selected={kind === 'renter'} className={kind === 'renter' ? 'btn' : 'btn ghost'} onClick={() => setKind('renter')}>Inquilinos</button>
+        </div>
+        <p style={{ marginTop: 0 }}>{kind === 'owner' ? 'Dê aos proprietários acesso ao portal para acompanharem imóveis, aluguéis e repasses sem precisar ligar.' : 'Dê aos inquilinos acesso ao portal para verem as cobranças, pagarem por Pix ou boleto e baixarem o contrato.'}</p>
+        {data.items.length === 0 ? <Empty text={`Nenhum ${who} cadastrado ainda.`} /> : (
           <table>
-            <thead><tr><th>Proprietário</th><th>Imóveis</th><th>Acesso</th><th /></tr></thead>
+            <thead><tr><th>{kind === 'owner' ? 'Proprietário' : 'Inquilino'}</th><th>{kind === 'owner' ? 'Imóveis' : 'Contratos ativos'}</th><th>Acesso</th><th /></tr></thead>
             <tbody>{data.items.map((o) => (
               <tr key={o.id}>
                 <td>{o.name}{o.email && <><br /><small style={{ color: 'var(--muted)' }}>{o.email}</small></>}</td>
@@ -376,7 +382,7 @@ function Owners({ notify }: { notify: Notify }) {
                 <td>
                   {emailFor === o.id ? (
                     <form onSubmit={(e) => send(o, e)} style={{ display: 'flex', gap: 6 }}>
-                      <input aria-label={`E-mail de ${o.name}`} type="email" required placeholder="e-mail do proprietário" value={email} onChange={(e) => setEmail(e.target.value)} style={{ minHeight: 34 }} />
+                      <input aria-label={`E-mail de ${o.name}`} type="email" required placeholder="e-mail da pessoa" value={email} onChange={(e) => setEmail(e.target.value)} style={{ minHeight: 34 }} />
                       <button className="btn gold" style={{ minHeight: 34 }}>Gerar link</button>
                     </form>
                   ) : (

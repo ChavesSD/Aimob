@@ -18,10 +18,14 @@ import Security from './pages/Security';
 import Payments from './pages/Payments';
 import AcceptInvite from './pages/AcceptInvite';
 import { PortalHome, PortalProperties, PortalPayouts } from './pages/Portal';
+import { RenterHome, RenterPayments, RenterContract } from './pages/RenterPortal';
 
 /** Página inicial por perfil. Lê a sessão a cada renderização (e não uma vez, na montagem das rotas). */
 function Home() {
-  return getSession()?.user.role === 'landlord' ? <Navigate to="/portal" replace /> : <Dashboard />;
+  const role = getSession()?.user.role;
+  if (role === 'landlord') return <Navigate to="/portal" replace />;
+  if (role === 'renter') return <Navigate to="/inquilino" replace />;
+  return <Dashboard />;
 }
 
 function Shell() {
@@ -39,6 +43,24 @@ function Shell() {
             <NavLink to="/portal" end>Resumo</NavLink>
             <NavLink to="/portal/imoveis">Meus imóveis</NavLink>
             <NavLink to="/portal/repasses">Repasses e extrato</NavLink>
+            <NavLink to="/seguranca">Segurança</NavLink>
+          </nav>
+          <div className="foot">{s.user.name}<br /><button className="btn ghost" style={{ marginTop: 8 }} onClick={logout}>Sair</button></div>
+        </aside>
+        <main className="main"><Outlet /></main>
+      </div>
+    );
+  }
+  // Inquilino (usuário externo): área própria, só o contrato dele.
+  if (s.user.role === 'renter') {
+    return (
+      <div className="shell">
+        <aside className="sidebar">
+          <div className="logo">{brand.name}<span>.</span></div>
+          <nav className="nav" aria-label="Portal do inquilino">
+            <NavLink to="/inquilino" end>Resumo</NavLink>
+            <NavLink to="/inquilino/pagamentos">Pagamentos</NavLink>
+            <NavLink to="/inquilino/contrato">Contrato</NavLink>
             <NavLink to="/seguranca">Segurança</NavLink>
           </nav>
           <div className="foot">{s.user.name}<br /><button className="btn ghost" style={{ marginTop: 8 }} onClick={logout}>Sair</button></div>
@@ -81,6 +103,9 @@ createRoot(document.getElementById('root')!).render(
         <Route path="/aceitar-convite" element={<AcceptInvite />} />
         <Route element={<Shell />}>
           <Route index element={<Home />} />
+          <Route path="inquilino" element={<RenterHome />} />
+          <Route path="inquilino/pagamentos" element={<RenterPayments />} />
+          <Route path="inquilino/contrato" element={<RenterContract />} />
           <Route path="portal" element={<PortalHome />} />
           <Route path="portal/imoveis" element={<PortalProperties />} />
           <Route path="portal/repasses" element={<PortalPayouts />} />

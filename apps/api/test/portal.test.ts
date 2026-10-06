@@ -277,6 +277,6 @@ describe('isolamento entre imobiliárias e revogação', () => {
     expect(await login('helena@proprietaria.example', 'NovaSenha#Forte2026')).toBeTruthy();
     const log = (await call(mgr, 'GET', '/api/audit')).json().items.map((x: any) => x.summary).join('\n');
     expect(log).toMatch(/Acesso ao portal do proprietário revogado/);
-    expect(log).toMatch(/Proprietário aceitou o convite/);
+    expect(log).toMatch(/aceitou o convite/);
   });
 });

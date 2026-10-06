@@ -15,6 +15,7 @@ import { registerAutomationRoutes } from './routes/automation.js';
 import { registerPublicRoutes } from './routes/public.js';
 import { registerRentalRoutes } from './routes/rentals.js';
 import { registerPortalRoutes } from './routes/portal.js';
+import { registerRenterPortalRoutes } from './routes/renterPortal.js';
 import { registerDocumentRoutes } from './routes/documents.js';
 import { registerPaymentRoutes } from './routes/payments.js';
 import { fireTrigger } from './domain/automation.js';
@@ -418,6 +419,7 @@ export async function buildApp(db: Db, opts: { trustProxy?: boolean; logger?: bo
   registerPublicRoutes(app, db);
   registerRentalRoutes(app, db, opts.fetchImpl);
   registerPortalRoutes(app, db);
+  registerRenterPortalRoutes(app, db);
   registerDocumentRoutes(app, db);
   registerPaymentRoutes(app, db, opts.fetchImpl);
 

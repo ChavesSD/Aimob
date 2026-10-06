@@ -44,13 +44,16 @@ export async function consumeInvite(q: Queryable, tokenHash: string): Promise<{ 
 export function registerPortalRoutes(app: FastifyInstance, db: Db) {
   // ================= Gestão do acesso (equipe da imobiliária) =================
   app.get('/api/portal/access', { preHandler: guard('rentals', 'admin') }, async (req) => {
+    const q = z.object({ kind: z.enum(['owner', 'renter']).default('owner') }).parse(req.query);
     const items = await scoped(db, req.session!.tid).rows<any>(
       `SELECT c.id, c.name, c.email AS contact_email, u.email AS user_email, u.active AS accepted,
               (SELECT max(expires_at) FROM user_invites i WHERE i.user_id = u.id AND i.used_at IS NULL) AS invite_expires_at,
-              (SELECT count(*)::int FROM properties p WHERE p.tenant_id = c.tenant_id AND p.deleted_at IS NULL AND (p.owner_contact_id = c.id
-                 OR EXISTS (SELECT 1 FROM rental_contracts oc WHERE oc.tenant_id = p.tenant_id AND oc.property_id = p.id AND oc.landlord_id = c.id))) AS properties
+              CASE WHEN c.kind = 'owner' THEN
+                (SELECT count(*)::int FROM properties p WHERE p.tenant_id = c.tenant_id AND p.deleted_at IS NULL AND (p.owner_contact_id = c.id
+                   OR EXISTS (SELECT 1 FROM rental_contracts oc WHERE oc.tenant_id = p.tenant_id AND oc.property_id = p.id AND oc.landlord_id = c.id)))
+              ELSE (SELECT count(*)::int FROM rental_contracts rc WHERE rc.tenant_id = c.tenant_id AND rc.renter_id = c.id AND rc.status = 'active') END AS properties
          FROM contacts c LEFT JOIN users u ON u.contact_id = c.id AND u.tenant_id = c.tenant_id
-        WHERE c.tenant_id = $1 AND c.kind = 'owner' AND c.deleted_at IS NULL ORDER BY c.name LIMIT 500`);
+        WHERE c.tenant_id = $1 AND c.kind = $2 AND c.deleted_at IS NULL ORDER BY c.name LIMIT 500`, [q.kind]);
     return { items: items.map((i) => ({ id: i.id, name: i.name, email: i.user_email ?? i.contact_email ?? null, hasUser: !!i.user_email, accepted: !!i.accepted,
       inviteExpiresAt: i.invite_expires_at, properties: i.properties })) };
   });
@@ -59,8 +62,9 @@ export function registerPortalRoutes(app: FastifyInstance, db: Db) {
     const b = z.object({ contactId: uuid, email: z.string().trim().email().max(160) }).parse(req.body);
     const tid = req.session!.tid;
     const s = scoped(db, tid);
-    const [contact] = await s.rows<{ id: string; name: string }>(`SELECT id, name FROM contacts WHERE tenant_id = $1 AND id = $2 AND kind = 'owner' AND deleted_at IS NULL`, [b.contactId]);
-    if (!contact) return reply.code(404).send({ error: 'Proprietário não encontrado.' });
+    const [contact] = await s.rows<{ id: string; name: string; kind: string }>(`SELECT id, name, kind FROM contacts WHERE tenant_id = $1 AND id = $2 AND kind IN ('owner','renter') AND deleted_at IS NULL`, [b.contactId]);
+    if (!contact) return reply.code(404).send({ error: 'Proprietário ou inquilino não encontrado.' });
+    const role = contact.kind === 'owner' ? 'landlord' : 'renter';
     const email = b.email.toLowerCase();
 
     const token = randomBytes(32).toString('base64url');
@@ -75,8 +79,8 @@ export function registerPortalRoutes(app: FastifyInstance, db: Db) {
         if (!userId) {
           // Senha inicial impossível de adivinhar e usuário inativo: só o convite abre o acesso.
           const r = await tx.query<{ id: string }>(
-            `INSERT INTO users (tenant_id, email, name, role, password_hash, active, contact_id) VALUES ($1,$2,$3,'landlord',$4,false,$5) RETURNING id`,
-            [tid, email, contact.name, hashPassword(randomBytes(24).toString('hex')), contact.id]);
+            `INSERT INTO users (tenant_id, email, name, role, password_hash, active, contact_id) VALUES ($1,$2,$3,$4,$5,false,$6) RETURNING id`,
+            [tid, email, contact.name, role, hashPassword(randomBytes(24).toString('hex')), contact.id]);
           userId = r.rows[0].id;
         }
         await tx.query(`UPDATE user_invites SET expires_at = now() WHERE user_id = $1 AND used_at IS NULL`, [userId]); // um convite válido por vez
@@ -87,7 +91,7 @@ export function registerPortalRoutes(app: FastifyInstance, db: Db) {
       if (/users_email_key|unique/i.test(String(e?.message))) return reply.code(409).send({ error: 'Este e-mail já está em uso por outro usuário.' });
       throw e;
     }
-    await audit(db, req, { action: 'portal.invite', resource: 'contact', resourceId: contact.id, summary: `Convite do portal gerado para o proprietário ${contact.name}` }); // o token nunca vai ao log
+    await audit(db, req, { action: 'portal.invite', resource: 'contact', resourceId: contact.id, summary: `Convite do portal gerado para ${contact.kind === 'owner' ? 'o proprietário' : 'o inquilino'} ${contact.name}` }); // o token nunca vai ao log
     const base = (process.env.APP_URL ?? '').replace(/\/$/, '');
     return reply.code(201).send({ inviteUrl: `${base}/aceitar-convite?token=${token}`, expiresAt: expiresAt.toISOString() });
   });
@@ -95,8 +99,8 @@ export function registerPortalRoutes(app: FastifyInstance, db: Db) {
   app.delete('/api/portal/access/:contactId', { preHandler: guard('rentals', 'admin') }, async (req, reply) => {
     const contactId = uuid.parse((req.params as any).contactId);
     const tid = req.session!.tid;
-    const rows = await scoped(db, tid).rows<{ id: string }>(`UPDATE users SET active = false WHERE tenant_id = $1 AND contact_id = $2 AND role = 'landlord' RETURNING id`, [contactId]);
-    if (!rows.length) return reply.code(404).send({ error: 'Esse proprietário não tem acesso ao portal.' });
+    const rows = await scoped(db, tid).rows<{ id: string }>(`UPDATE users SET active = false WHERE tenant_id = $1 AND contact_id = $2 AND role IN ('landlord','renter') RETURNING id`, [contactId]);
+    if (!rows.length) return reply.code(404).send({ error: 'Essa pessoa não tem acesso ao portal.' });
     await scoped(db, tid).rows(`UPDATE user_invites SET expires_at = now() WHERE tenant_id = $1 AND user_id = $2 AND used_at IS NULL RETURNING id`, [rows[0].id]);
     await audit(db, req, { action: 'portal.revoke', resource: 'contact', resourceId: contactId, summary: 'Acesso ao portal do proprietário revogado' });
     return { ok: true };
@@ -120,7 +124,7 @@ export function registerPortalRoutes(app: FastifyInstance, db: Db) {
       return claimed;
     });
     if (!done) return invalid();
-    await auditSystem(db, done.tenant_id, { action: 'portal.accept', resource: 'user', resourceId: done.user_id, summary: 'Proprietário aceitou o convite e definiu a senha' });
+    await auditSystem(db, done.tenant_id, { action: 'portal.accept', resource: 'user', resourceId: done.user_id, summary: 'Convidado do portal aceitou o convite e definiu a senha' });
     return { ok: true };
   });
 

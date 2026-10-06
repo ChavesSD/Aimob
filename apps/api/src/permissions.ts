@@ -1,5 +1,5 @@
 export type Action = 'view' | 'create' | 'edit' | 'delete' | 'export' | 'admin';
-export type Module = 'leads' | 'properties' | 'visits' | 'dashboard' | 'audit' | 'users' | 'rentals' | 'finance' | 'portal';
+export type Module = 'leads' | 'properties' | 'visits' | 'dashboard' | 'audit' | 'users' | 'rentals' | 'finance' | 'portal' | 'renter_portal';
 
 const all: Action[] = ['view', 'create', 'edit', 'delete', 'export', 'admin'];
 const rw: Action[] = ['view', 'create', 'edit'];
@@ -12,6 +12,8 @@ const ROLE_PERMS: Record<string, Partial<Record<Module, Action[]>>> = {
   marketing: { properties: rw, leads: ['view'], dashboard: ['view'] },
   // Proprietário do imóvel (usuário externo): só o portal, e mesmo nele só o que é dele (ver routes/portal.ts).
   landlord: { portal: ['view'] },
+  // Inquilino (usuário externo): só o portal do inquilino, e só o contrato dele.
+  renter: { renter_portal: ['view'] },
 };
 
 export function can(role: string, mod: Module, action: Action): boolean {

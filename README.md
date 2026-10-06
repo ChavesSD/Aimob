@@ -32,6 +32,7 @@ Locação e financeiro (contratos, cobranças geradas de forma idempotente, baix
 CRM com score explicável, pipeline kanban, imóveis com saúde e vida do imóvel, agenda de visitas (conflito de horário e feedback),
 Boleto com Pix pelo Asaas no mesmo modelo do Aidate (subconta por imobiliária + split) com baixa automática por webhook (**não validado contra o Asaas real**: ver [docs/PAGAMENTOS.md](docs/PAGAMENTOS.md)),
 contratos em documento (modelos com variáveis, versões, aprovação em duas pessoas, PDF com hash; assinatura registrada manualmente: ver [docs/ASSINATURA.md](docs/ASSINATURA.md)),
+portal do inquilino (cobranças com estimativa de atraso e opções de pagamento, contrato em PDF; somente leitura),
 portal do proprietário (convite de uso único, imóveis, aluguéis, repasses e extrato CSV, somente leitura),
 distribuição de leads (rodízio ou manual), automações quando → se → então (ações internas, com aprovação opcional),
 tarefas e avisos agrupados, painel "o que precisa da sua atenção", auditoria legível, permissões por perfil, isolamento por tenant,
@@ -40,7 +41,7 @@ landing com diagnóstico (consentimento LGPD, honeypot, rate limit) e leitura vi
 
 ## O que NÃO existe (não prometer em material comercial)
 
-Cartão, split de pagamento e conciliação bancária (o repasse ao proprietário continua sendo registro manual; nada é transferido pelo sistema), busca automática de índices (IGP-M/IPCA), DIMOB e fiscal, conciliação bancária, integração com provedor de assinatura eletrônica, WhatsApp, IA, portais imobiliários, portal do inquilino e, no do proprietário, manutenção/chamados/documentos,
+Cartão, split de pagamento e conciliação bancária (o repasse ao proprietário continua sendo registro manual; nada é transferido pelo sistema), busca automática de índices (IGP-M/IPCA), DIMOB e fiscal, conciliação bancária, integração com provedor de assinatura eletrônica, WhatsApp, IA, portais imobiliários, chamados de manutenção e documentos nos portais,
 app mobile, importação de dados, billing do SaaS e painel Admin SaaS. Pesquisa de mercado e legislação em `docs/research/PESQUISA-INICIAL.md`
 (vários pontos ali estão marcados como incertos e exigem validação jurídica).
 
