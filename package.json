@@ -2,11 +2,17 @@
   "name": "aimob",
   "private": true,
   "version": "0.1.0",
-  "workspaces": ["apps/*"],
+  "workspaces": [
+    "apps/*"
+  ],
   "scripts": {
     "dev:api": "npm run dev -w apps/api",
     "dev:web": "npm run dev -w apps/web",
     "test": "npm test -w apps/api",
-    "typecheck": "npm run typecheck -w apps/api && npm run typecheck -w apps/web"
+    "typecheck": "npm run typecheck -w apps/api && npm run typecheck -w apps/web",
+    "dev": "concurrently -k -n api,web,landing -c blue,green,yellow \"npm run dev -w @aimob/api\" \"npm run dev -w @aimob/web\" \"npm run dev -w @aimob/landing\""
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5"
   }
 }
