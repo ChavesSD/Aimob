@@ -34,6 +34,6 @@ export function buildDiagnosis(pains: Pain[], opts: { sells: boolean; rents: boo
   if (avail.length) parts.push(`Também já podemos ajudar em: ${avail.join('; ')}.`);
   const road = [main, ...rest].filter((p) => !PAIN_INFO[p].available).map((p) => PAIN_INFO[p].insight);
   if (road.length) parts.push(`Em desenvolvimento (ainda indisponível): ${road.join('; ')}.`);
-  if (opts.rents) parts.push('Na locação, o produto já controla contratos, cobranças, inadimplência, repasses e reajustes com registro manual; Pix/boleto com baixa automática está em validação; assinatura eletrônica e contratos em documento estão no roadmap.');
+  if (opts.rents) parts.push('Na locação, o produto já controla contratos, cobranças, inadimplência, repasses e reajustes com registro manual; Pix/boleto com baixa automática está em validação; contratos em documento já são gerados com versões e aprovação, mas a assinatura é registrada manualmente (integração com provedor de assinatura está no roadmap).');
   return parts.join(' ');
 }

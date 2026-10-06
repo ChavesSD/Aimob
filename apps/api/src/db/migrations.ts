@@ -100,6 +100,91 @@ export const MIGRATIONS: Migration[] = [
     );
     CREATE INDEX IF NOT EXISTS user_invites_user_idx ON user_invites (user_id);
   ` },
+  { version: 6, name: 'contratos em documento', sql: `
+    CREATE TABLE IF NOT EXISTS contract_templates (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id uuid NOT NULL REFERENCES tenants(id),
+      name text NOT NULL,
+      kind text NOT NULL DEFAULT 'locacao',
+      body text NOT NULL,
+      notes text,
+      version int NOT NULL DEFAULT 1,
+      reviewed boolean NOT NULL DEFAULT false,
+      reviewed_by uuid,
+      reviewed_at timestamptz,
+      active boolean NOT NULL DEFAULT true,
+      created_by uuid,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE TABLE IF NOT EXISTS contract_documents (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id uuid NOT NULL REFERENCES tenants(id),
+      rental_contract_id uuid REFERENCES rental_contracts(id),
+      template_id uuid REFERENCES contract_templates(id),
+      template_version int,
+      template_reviewed boolean NOT NULL DEFAULT false,
+      title text NOT NULL,
+      kind text NOT NULL DEFAULT 'locacao',
+      status text NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','in_review','approved','sent','signed','cancelled')),
+      body_enc text NOT NULL,
+      content_hash text NOT NULL,
+      current_version int NOT NULL DEFAULT 1,
+      signature_level text NOT NULL DEFAULT 'avancada' CHECK (signature_level IN ('simples','avancada','qualificada')),
+      created_by uuid,
+      approved_by uuid,
+      approved_at timestamptz,
+      approved_hash text,
+      pdf_key text,
+      pdf_sha256 text,
+      sent_at timestamptz,
+      signed_at timestamptz,
+      cancelled_at timestamptz,
+      cancel_reason text,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS contract_documents_idx ON contract_documents (tenant_id, status, created_at DESC);
+    CREATE TABLE IF NOT EXISTS contract_document_versions (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id uuid NOT NULL REFERENCES tenants(id),
+      document_id uuid NOT NULL REFERENCES contract_documents(id),
+      version int NOT NULL,
+      body_enc text NOT NULL,
+      content_hash text NOT NULL,
+      author_id uuid,
+      note text,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      UNIQUE (document_id, version)
+    );
+    CREATE TABLE IF NOT EXISTS contract_signers (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id uuid NOT NULL REFERENCES tenants(id),
+      document_id uuid NOT NULL REFERENCES contract_documents(id),
+      role text NOT NULL,
+      name text NOT NULL,
+      email text,
+      position int NOT NULL DEFAULT 0,
+      status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','signed')),
+      signed_at timestamptz,
+      evidence text,
+      declared_by uuid,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE TABLE IF NOT EXISTS contract_files (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id uuid NOT NULL REFERENCES tenants(id),
+      document_id uuid NOT NULL REFERENCES contract_documents(id),
+      kind text NOT NULL DEFAULT 'signed',
+      filename text NOT NULL,
+      mime text NOT NULL,
+      size bigint NOT NULL,
+      sha256 text NOT NULL,
+      storage_key text NOT NULL,
+      uploaded_by uuid,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+  ` },
 ];
 
 export async function runMigrations(db: Db, migrations: Migration[] = MIGRATIONS): Promise<number[]> {

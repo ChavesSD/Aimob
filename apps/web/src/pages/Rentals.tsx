@@ -3,8 +3,9 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { useApi } from '../hooks';
 import { Empty, ErrorBox, Skeleton } from '../ui';
+import Documents from './Documents';
 
-const TABS: [string, string][] = [['contratos', 'Contratos'], ['cobrancas', 'Cobranças'], ['inadimplencia', 'Inadimplência'], ['repasses', 'Repasses'], ['reajustes', 'Reajustes'], ['proprietarios', 'Proprietários']];
+const TABS: [string, string][] = [['contratos', 'Contratos'], ['cobrancas', 'Cobranças'], ['inadimplencia', 'Inadimplência'], ['repasses', 'Repasses'], ['reajustes', 'Reajustes'], ['proprietarios', 'Proprietários'], ['documentos', 'Documentos']];
 // Financeiro sempre mostra centavos (o brl() global arredonda para reais inteiros, adequado só a KPIs grandes).
 const money = (c: number) => (c / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDate = (iso: string) => iso.split('-').reverse().join('/');
@@ -36,6 +37,7 @@ export default function Rentals() {
       {tab === 'repasses' && <Payouts notify={setMsg} />}
       {tab === 'reajustes' && <Adjustments notify={setMsg} />}
       {tab === 'proprietarios' && <Owners notify={setMsg} />}
+      {tab === 'documentos' && <Documents notify={setMsg} />}
     </>
   );
 }

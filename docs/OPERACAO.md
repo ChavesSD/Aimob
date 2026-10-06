@@ -29,6 +29,7 @@ A API valida tudo isto na subida (`productionProblems` em `src/config.ts`) e sai
 | `DATA_ENC_KEY` (≥ 32) | criptografia de CPF/CNPJ e chaves de API de gateways em repouso |
 | `PUBLIC_API_URL` (https) | endereço público da API, usado no webhook de pagamentos (ver `docs/PAGAMENTOS.md`) |
 | `ASAAS_API_KEY`, `ASAAS_API_URL`, `ASAAS_USER_AGENT`, `ASAAS_WEBHOOK_TOKEN` (≥ 32) | conta principal do Asaas (mesmos nomes do Aidate); com a chave definida, o token do webhook passa a ser obrigatório em produção |
+| `FILES_DIR` | pasta dos PDFs de contratos (padrão `./data/files`); **fora do backup lógico**: inclua no backup do servidor |
 | `BACKUP_ENC_KEY` (≥ 32) | criptografia dos arquivos de backup |
 | `IP_HASH_SALT` (≥ 16, não-exemplo) | hash de IP nos formulários públicos |
 | `CORS_ORIGIN` | origens permitidas do front |
@@ -54,6 +55,8 @@ BACKUP_ENC_KEY=... npm run restore -w @aimob/api -- <arquivo>          # restaur
 ```
 
 Verificado por teste (nos dois bancos): ida e volta reproduz os dados (dinheiro, jsonb, datas, uuid e hashes de senha); o arquivo não contém texto legível; chave errada, arquivo adulterado e conteúdo alterado são recusados; restaurar em banco com dados é recusado; falha no meio da restauração desfaz tudo; o teste também garante que **nenhuma tabela nova fique de fora** do backup (se alguém criar uma tabela e esquecer de listá-la em `BACKUP_TABLES`, os testes falham).
+
+**Arquivos de contratos (PDFs)** não entram nesse backup lógico: ficam em `FILES_DIR` e precisam do próprio backup (ver `docs/ASSINATURA.md`).
 
 Limites conhecidos: o backup lógico carrega cada tabela em memória (adequado a milhares de imóveis e centenas de milhares de registros; para volumes muito maiores use o backup físico). Com PGlite em disco, pare a API antes de rodar o CLI.
 

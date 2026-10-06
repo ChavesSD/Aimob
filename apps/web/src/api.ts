@@ -46,3 +46,14 @@ export async function downloadFile(path: string, filename: string): Promise<void
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+/** Envia um arquivo (multipart). O navegador define o cabeçalho com o limite do corpo; não defina content-type à mão. */
+export async function uploadFile<T = unknown>(path: string, file: File): Promise<T> {
+  const s = getSession();
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch(path, { method: 'POST', body: form, headers: s ? { authorization: `Bearer ${s.token}` } : {} });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new ApiError(body.error ?? 'Não conseguimos enviar o arquivo agora.', res.status);
+  return body as T;
+}
