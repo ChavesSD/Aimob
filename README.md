@@ -49,6 +49,6 @@ app mobile, importação de dados, billing do SaaS e painel Admin SaaS. Pesquisa
 - **Landing/SEO:** a página está com `noindex`. Ao definir o domínio: remover `noindex`, incluir `canonical`, `og:url`, `sitemap.xml` e `robots.txt`.
 - **Produção:** guia, variáveis, backup/restore e metas de RPO/RTO em [docs/OPERACAO.md](docs/OPERACAO.md). A varredura de leads parados roda em `setInterval`
   dentro da API; com várias instâncias ela é repetida (idempotente, mas desperdiça trabalho): migrar para fila/agendador.
-- **Segurança:** MFA TOTP já existe (não é obrigatório por papel). Faltam rotação de segredos, CSP validada em servidor real e monitoramento de erros.
+- **Segurança:** MFA TOTP obrigatório por política (padrão: diretoria, gerência e financeiro; ver `docs/OPERACAO.md`). Faltam rotação de segredos, CSP validada em servidor real e monitoramento de erros.
 - **Pipelines:** etapas fixas no código; personalização por tenant (`pipeline_stages`) ainda não usada.
 - **Tabelas grandes:** `GET /api/leads` ordena por score com limite; falta paginação completa e colunas configuráveis.

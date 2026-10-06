@@ -25,6 +25,8 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   // 401 numa rota comum = sessão expirada. Nas rotas de autenticação (login, código MFA) 401 é "credencial incorreta":
   // o erro precisa aparecer na própria tela, sem recarregar.
   if (res.status === 401 && !path.startsWith('/api/auth/')) { setSession(null); location.assign('/login'); }
+  // A imobiliária exige verificação em duas etapas e este usuário ainda não a ativou: leva direto à configuração.
+  if (res.status === 403 && body.code === 'mfa_setup_required' && !location.pathname.startsWith('/seguranca')) location.assign('/seguranca?obrigatorio=1');
   if (!res.ok) throw new ApiError(body.error ?? 'Não conseguimos concluir esta ação agora.', res.status);
   return body as T;
 }

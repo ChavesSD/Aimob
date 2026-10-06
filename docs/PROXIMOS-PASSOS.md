@@ -1,9 +1,9 @@
 # Onde paramos (06/10/2026)
 
-Suíte: 160 testes passando em PGlite e em PostgreSQL 18 real (`npm test` e `npm run test:pg -w @aimob/api`).
+Suíte: 169 testes passando em PGlite e em PostgreSQL 18 real (`npm test` e `npm run test:pg -w @aimob/api`).
 
 ## Pronto
-Contratos em documento (modelos, versões, aprovação, PDF com hash, assinatura registrada manualmente). Portal do proprietário (convite, imóveis, aluguéis, repasses, extrato CSV). Fundação multi-tenant, CRM/pipeline/agenda, imóveis, distribuição de leads, automações, locação e financeiro (manual), PostgreSQL + migrações, backup/restore criptografado, MFA, Pix/boleto via Asaas (testado só com duplo de teste), landing com diagnóstico.
+MFA obrigatório por política (padrão diretoria/gerência/financeiro), com redefinição por colega e revogação de sessões. Contratos em documento (modelos, versões, aprovação, PDF com hash, assinatura registrada manualmente). Portal do proprietário (convite, imóveis, aluguéis, repasses, extrato CSV). Fundação multi-tenant, CRM/pipeline/agenda, imóveis, distribuição de leads, automações, locação e financeiro (manual), PostgreSQL + migrações, backup/restore criptografado, MFA, Pix/boleto via Asaas (testado só com duplo de teste), landing com diagnóstico.
 
 ## Pagamentos
 Alinhados ao modelo do Aidate (conta principal + subconta + split + webhook global). Decisão do usuário: não validar em sandbox agora. Pontos em aberto (tarifas com split, multa/juros, valor pago em atraso, `CONFIRMED` x `RECEIVED`) em `docs/PAGAMENTOS.md`.
@@ -11,7 +11,7 @@ Para ativar em produção: definir `ASAAS_API_KEY`, `ASAAS_WEBHOOK_TOKEN` (e cad
 
 ## Candidatos para a próxima sessão
 1. **Integração com provedor de assinatura** (decisão pendente de escolha do provedor e do nível de assinatura; ver `docs/ASSINATURA.md`).
-2. **Obrigar MFA** para `owner`/`manager`; rotação de segredos.
+2. Rotação de segredos (MFA obrigatório por política já feito).
 3. **Produção**: monitoramento de erros, CSP validada em servidor real, migrar a varredura de leads parados para fila.
 4. Portal do inquilino; manutenção/chamados e documentos no portal do proprietário.
 5. WhatsApp (API oficial), IA com regras de segurança, portais imobiliários, importação de dados, Admin SaaS e billing.

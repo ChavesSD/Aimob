@@ -2,19 +2,31 @@ import type { FastifyInstance } from 'fastify';
 import QRCode from 'qrcode';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
+import { scoped } from '../db/client.js';
 import { audit } from '../audit.js';
+import { guard } from '../guard.js';
 import { signToken, verifyMfaToken, verifyPassword } from '../auth.js';
 import { brand } from '../config.js';
 import { decryptSecret, encryptSecret, hashCode, newRecoveryCodes } from '../domain/mfa.js';
 import { base32Encode, newSecret, otpauthUrl, verifyTotp } from '../domain/totp.js';
 
+export type MfaPolicy = 'off' | 'admins' | 'staff';
+const ADMIN_ROLES = ['owner', 'manager', 'finance'];                                   // mexem com dinheiro e dados sensíveis
+const STAFF_ROLES = [...ADMIN_ROLES, 'broker', 'marketing'];                           // toda a equipe da imobiliária (proprietários ficam de fora)
+/** Rotas liberadas enquanto o MFA exigido ainda não foi configurado: só o necessário para configurá-lo. */
+export const MFA_SETUP_ROUTES = new Set(['/api/me', '/api/auth/mfa/setup', '/api/auth/mfa/enable']);
+
+export function mfaRequiredFor(policy: MfaPolicy, role: string): boolean {
+  return policy === 'staff' ? STAFF_ROLES.includes(role) : policy === 'admins' ? ADMIN_ROLES.includes(role) : false;
+}
+
 const MAX_FAILURES = 5;
 const LOCK_MINUTES = 15;
 
-interface Row { id: string; tenant_id: string; role: string; name: string; email: string; mfa_secret_enc: string | null; mfa_enabled: boolean; mfa_last_step: number; locked: boolean }
+interface Row { id: string; tenant_id: string; role: string; name: string; email: string; mfa_secret_enc: string | null; mfa_enabled: boolean; mfa_last_step: number; session_epoch: number; locked: boolean }
 
 const loadUser = async (db: Db, id: string): Promise<Row | undefined> => (await db.query<Row>(
-  `SELECT id, tenant_id, role, name, email, mfa_secret_enc, mfa_enabled, mfa_last_step, (mfa_locked_until IS NOT NULL AND mfa_locked_until > now()) AS locked
+  `SELECT id, tenant_id, role, name, email, mfa_secret_enc, mfa_enabled, mfa_last_step, session_epoch, (mfa_locked_until IS NOT NULL AND mfa_locked_until > now()) AS locked
      FROM users WHERE id = $1 AND active`, [id])).rows[0];
 
 type Check = 'ok' | 'invalid' | 'locked';
@@ -53,7 +65,46 @@ const codeInput = z.object({ code: z.string().regex(/^\d{6}$/).optional(), recov
 export function registerMfaRoutes(app: FastifyInstance, db: Db) {
   app.get('/api/me', async (req) => {
     const u = await loadUser(db, req.session!.sub);
-    return { id: u!.id, name: u!.name, role: u!.role, mfaEnabled: u!.mfa_enabled };
+    const [st] = await scoped(db, req.session!.tid).rows<{ mfa_policy: MfaPolicy }>(`SELECT mfa_policy FROM tenant_settings WHERE tenant_id = $1`);
+    const policy = st?.mfa_policy ?? 'admins';
+    return { id: u!.id, name: u!.name, role: u!.role, mfaEnabled: u!.mfa_enabled, mfaPolicy: policy, mfaRequired: mfaRequiredFor(policy, u!.role) };
+  });
+
+  // ---- Política de MFA da imobiliária (só a diretoria, e só com o próprio MFA ativo) ----
+  app.get('/api/settings/mfa-policy', { preHandler: guard('users', 'view') }, async (req) => {
+    const [st] = await scoped(db, req.session!.tid).rows<{ mfa_policy: MfaPolicy }>(`SELECT mfa_policy FROM tenant_settings WHERE tenant_id = $1`);
+    return { policy: st?.mfa_policy ?? 'admins' };
+  });
+
+  app.put('/api/settings/mfa-policy', { preHandler: guard('users', 'admin') }, async (req, reply) => {
+    const b = z.object({ policy: z.enum(['off', 'admins', 'staff']) }).parse(req.body);
+    const me = await loadUser(db, req.session!.sub);
+    // Quem altera a regra precisa estar protegido: uma sessão sem MFA não pode afrouxar a proteção de todos.
+    if (!me!.mfa_enabled) return reply.code(409).send({ error: 'Ative a sua própria verificação em duas etapas antes de alterar esta regra.' });
+    const tid = req.session!.tid;
+    const [cur] = await scoped(db, tid).rows<{ mfa_policy: MfaPolicy }>(`SELECT mfa_policy FROM tenant_settings WHERE tenant_id = $1`);
+    const before = cur?.mfa_policy ?? 'admins';
+    await db.query(`INSERT INTO tenant_settings (tenant_id, mfa_policy) VALUES ($1, $2) ON CONFLICT (tenant_id) DO UPDATE SET mfa_policy = $2, updated_at = now()`, [tid, b.policy]);
+    const label = { off: 'ninguém', admins: 'diretoria, gerência e financeiro', staff: 'toda a equipe' };
+    await audit(db, req, { action: 'settings.mfa_policy', resource: 'tenant', before: { policy: before }, after: b, summary: `Exigência de verificação em duas etapas alterada de "${label[before]}" para "${label[b.policy]}"` });
+    return { ok: true, policy: b.policy };
+  });
+
+  // ---- Redefinir o MFA de um colega (celular perdido): desativa, apaga códigos e derruba as sessões dele ----
+  app.post('/api/team/:id/mfa-reset', { preHandler: guard('users', 'admin'), config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const id = z.string().uuid().parse((req.params as any).id);
+    const me = await loadUser(db, req.session!.sub);
+    if (!me!.mfa_enabled) return reply.code(409).send({ error: 'Ative a sua própria verificação em duas etapas antes de redefinir a de outra pessoa.' });
+    if (id === req.session!.sub) return reply.code(400).send({ error: 'Para desativar a sua própria verificação, use a página de Segurança.' });
+    const tid = req.session!.tid;
+    const target = await scoped(db, tid).rows<{ name: string }>(`SELECT name FROM users WHERE tenant_id = $1 AND id = $2`, [id]);
+    if (!target.length) return reply.code(404).send({ error: 'Usuário não encontrado.' });
+    await db.transaction(async (tx) => {
+      await tx.query(`UPDATE users SET mfa_enabled = false, mfa_secret_enc = NULL, mfa_last_step = 0, mfa_failed = 0, mfa_locked_until = NULL, session_epoch = session_epoch + 1 WHERE tenant_id = $1 AND id = $2`, [tid, id]);
+      await tx.query(`DELETE FROM mfa_recovery_codes WHERE tenant_id = $1 AND user_id = $2`, [tid, id]);
+    });
+    await audit(db, req, { action: 'auth.mfa_reset', resource: 'user', resourceId: id, summary: `Verificação em duas etapas de ${target[0].name} redefinida; sessões anteriores encerradas` });
+    return { ok: true };
   });
 
   // Segundo passo do login: troca (token curto + código) por uma sessão completa.
@@ -71,7 +122,7 @@ export function registerMfaRoutes(app: FastifyInstance, db: Db) {
       return reply.code(401).send({ error: 'Código incorreto. Confira o aplicativo e tente de novo.' });
     }
     await audit(db, req, { action: 'auth.login', resource: 'user', resourceId: u.id, summary: b.recoveryCode ? 'Login com código de recuperação' : 'Login com verificação em duas etapas' });
-    return { token: await signToken({ sub: u.id, tid: u.tenant_id, role: u.role }), user: { id: u.id, name: u.name, role: u.role } };
+    return { token: await signToken({ sub: u.id, tid: u.tenant_id, role: u.role, ep: u.session_epoch }), user: { id: u.id, name: u.name, role: u.role } };
   });
 
   // Passo 1 da ativação: gera o segredo (ainda inativo) e o QR code.

@@ -74,7 +74,12 @@ Estes números são **recomendações**, não medições:
 - Senhas com scrypt; login com tempo de resposta igual para e-mail inexistente; limite de 10 tentativas/min por IP.
 - MFA TOTP (RFC 6238, validado com os vetores oficiais): segredo criptografado em repouso, códigos de uso único, 8 códigos de recuperação (só o hash é guardado), bloqueio de 15 min após 5 erros, desativação exige senha **e** código.
 - O papel do usuário é sempre lido do banco; usuário desativado perde acesso na hora.
-- Ainda **não** há política que *obrigue* MFA por papel nem rotação automática de segredos.
+- **MFA obrigatório por política** (por imobiliária): `off`, `admins` (diretoria, gerência e financeiro; **padrão para imobiliárias novas**) ou `staff` (toda a equipe).
+  Quem deve ter e ainda não tem fica restrito a três rotas (`/api/me` e o cadastro do MFA); o resto responde 403 com `code: mfa_setup_required` e a tela leva direto à configuração.
+  Proprietários do portal (usuários externos) nunca são obrigados. Só a diretoria altera a regra, e só com o próprio MFA ativo (uma sessão sem MFA não pode afrouxar a proteção de todos).
+- **Redefinição do MFA de um colega** (celular perdido): só a diretoria com MFA ativo; desativa, apaga códigos de recuperação e **encerra as sessões** dele (época de sessão no token, exata e sem janela de rejeição).
+  Tudo auditado. Os dados de demonstração (`seed`) começam com a política `off` por conveniência: use `SEED_MFA_POLICY=admins` para demonstrar a exigência.
+- Ainda **não** há rotação automática de segredos.
 
 ## Cabeçalhos e CSP (a validar em staging)
 

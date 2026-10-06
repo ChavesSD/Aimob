@@ -16,10 +16,10 @@ export function verifyPassword(pw: string, stored: string): boolean {
   return timingSafeEqual(expected, actual);
 }
 
-export interface Session { sub: string; tid: string; role: string }
+export interface Session { sub: string; tid: string; role: string; /** época de sessão do usuário quando o token foi emitido: aumentar a época do usuário invalida todos os tokens antigos */ ep?: number }
 
 export async function signToken(s: Session): Promise<string> {
-  return new SignJWT({ tid: s.tid, role: s.role })
+  return new SignJWT({ tid: s.tid, role: s.role, ep: s.ep ?? 0 })
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject(s.sub)
     .setIssuedAt()
@@ -34,7 +34,7 @@ export async function verifyToken(token: string): Promise<Session> {
   });
   // Sessão exige tid e papel e nenhum "purpose": o token intermediário do MFA nunca vale como sessão.
   if (payload.purpose || typeof payload.tid !== 'string' || typeof payload.role !== 'string') throw new Error('Token de sessão inválido');
-  return { sub: String(payload.sub), tid: payload.tid, role: payload.role };
+  return { sub: String(payload.sub), tid: payload.tid, role: payload.role, ep: typeof payload.ep === 'number' ? payload.ep : 0 };
 }
 
 /** Token curto (5 min) emitido depois da senha e antes do código MFA. Só serve para /api/auth/mfa/verify. */

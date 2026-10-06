@@ -1,9 +1,9 @@
 import { useState, type FormEvent } from 'react';
-import { api } from '../api';
+import { api, getSession } from '../api';
 import { useApi } from '../hooks';
 import { ErrorBox, Skeleton } from '../ui';
 
-interface Me { name: string; role: string; mfaEnabled: boolean }
+interface Me { name: string; role: string; mfaEnabled: boolean; mfaRequired?: boolean; mfaPolicy?: string }
 interface Setup { secret: string; qrDataUrl: string }
 
 export default function Security() {
@@ -43,6 +43,9 @@ export default function Security() {
       <h1>Segurança da conta</h1>
       <p className="sub">Proteja o acesso com um segundo fator: além da senha, é preciso um código do seu celular.</p>
       {msg && <div className="alert baixa" role="status">{msg}</div>}
+      {!me.data.mfaEnabled && (me.data.mfaRequired || new URLSearchParams(location.search).has('obrigatorio')) && (
+        <div className="alert alta" role="alert"><div><strong>Sua imobiliária exige verificação em duas etapas.</strong> Ative-a abaixo para voltar a usar o sistema: até lá, as outras telas ficam bloqueadas.</div></div>
+      )}
       {err && <div className="error-box" role="alert" style={{ marginBottom: 12 }}>{err}</div>}
 
       {recovery && (
@@ -92,6 +95,43 @@ export default function Security() {
           </form>
         )}
       </section>
+      {getSession()?.user.role === 'owner' && me.data.mfaEnabled && <TeamSecurity notify={(m) => { setErr(null); setMsg(m); }} fail={(m) => { setMsg(null); setErr(m); }} />}
     </>
+  );
+}
+
+interface Member { id: string; name: string; role: string; mfa_enabled: boolean }
+const POLICY: Record<string, string> = { off: 'Ninguém', admins: 'Diretoria, gerência e financeiro (recomendado)', staff: 'Toda a equipe' };
+const ROLE_LABEL: Record<string, string> = { owner: 'Diretoria', manager: 'Gerência', finance: 'Financeiro', broker: 'Corretor', marketing: 'Marketing' };
+
+/** Só a diretoria (com o próprio MFA ativo): quem precisa de verificação em duas etapas e redefinição para colegas. */
+function TeamSecurity({ notify, fail }: { notify: (m: string) => void; fail: (m: string) => void }) {
+  const policy = useApi<{ policy: string }>('/api/settings/mfa-policy');
+  const team = useApi<{ items: Member[] }>('/api/team');
+  async function setPolicy(p: string) {
+    try { await api('/api/settings/mfa-policy', { method: 'PUT', body: JSON.stringify({ policy: p }) }); notify('Regra atualizada. Vale imediatamente para quem ainda não tem a verificação ativa.'); policy.reload(); } catch (e: any) { fail(e.message); }
+  }
+  async function reset(m: Member) {
+    if (!confirm(`Redefinir a verificação em duas etapas de ${m.name}? Ele será desconectado e precisará cadastrar de novo.`)) return;
+    try { await api(`/api/team/${m.id}/mfa-reset`, { method: 'POST' }); notify(`Verificação de ${m.name} redefinida.`); team.reload(); } catch (e: any) { fail(e.message); }
+  }
+  return (
+    <section className="card" style={{ marginTop: 16 }} aria-labelledby="eq">
+      <h2 id="eq" style={{ marginTop: 0, fontSize: 16 }}>Verificação em duas etapas da equipe</h2>
+      <label htmlFor="pol">Quem precisa ter a verificação ativa</label>
+      <select id="pol" value={policy.data?.policy ?? 'admins'} onChange={(e) => setPolicy(e.target.value)} style={{ maxWidth: 420 }}>
+        {Object.entries(POLICY).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+      </select>
+      <p style={{ color: 'var(--muted)', fontSize: 13 }}>Quem deve ter e ainda não tem só consegue abrir esta página. Proprietários do portal nunca são obrigados.</p>
+      {team.data && (
+        <table>
+          <thead><tr><th>Pessoa</th><th>Papel</th><th>Verificação</th><th /></tr></thead>
+          <tbody>{team.data.items.map((m) => (
+            <tr key={m.id}><td>{m.name}</td><td>{ROLE_LABEL[m.role] ?? m.role}</td><td>{m.mfa_enabled ? 'Ativa' : 'Não ativada'}</td>
+              <td>{m.mfa_enabled && m.id !== getSession()?.user.id && <button className="btn ghost" onClick={() => reset(m)}>Redefinir</button>}</td></tr>
+          ))}</tbody>
+        </table>
+      )}
+    </section>
   );
 }

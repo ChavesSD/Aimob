@@ -10,9 +10,11 @@ const FIRST = ['Maria', 'João', 'Ana', 'Carlos', 'Beatriz', 'Pedro', 'Luiza', '
 const LAST = ['Silva', 'Souza', 'Lima', 'Oliveira', 'Costa', 'Pereira', 'Almeida'];
 const SOURCES = ['portal', 'site', 'whatsapp', 'indicacao', 'manual'];
 
-export async function seedDemo(db: Db, opts: { tenantName: string; password: string; emailPrefix: string }) {
+export async function seedDemo(db: Db, opts: { tenantName: string; password: string; emailPrefix: string; mfaPolicy?: 'off' | 'admins' | 'staff' }) {
   const { rows: [t] } = await db.query<{ id: string }>(`INSERT INTO tenants (name) VALUES ($1) RETURNING id`, [`${opts.tenantName} (DEMONSTRAÇÃO)`]);
   const tid = t.id;
+  // Dados de demonstração não exigem MFA por padrão (conveniência de teste e de demo). Imobiliárias reais começam em 'admins'.
+  await db.query(`INSERT INTO tenant_settings (tenant_id, mfa_policy) VALUES ($1, $2)`, [tid, opts.mfaPolicy ?? 'off']);
   const pw = hashPassword(opts.password);
   const users: string[] = [];
   for (const [role, name] of [['owner', 'Diretoria Demo'], ['manager', 'Gerente Demo'], ['broker', 'Corretor Demo']] as const) {
@@ -131,7 +133,8 @@ if (process.argv[1]?.endsWith('seed.ts')) {
   const pw = process.env.SEED_PASSWORD;
   if (!pw || pw.length < 12) throw new Error('Defina SEED_PASSWORD (mín. 12 caracteres) para criar os usuários demo');
   const db = await openDb(config.databaseUrl || config.dataDir);
-  const r = await seedDemo(db, { tenantName: 'Imobiliária Exemplo', password: pw, emailPrefix: 'exemplo' });
+  const policy = (['off', 'admins', 'staff'] as const).find((x) => x === process.env.SEED_MFA_POLICY);
+  const r = await seedDemo(db, { tenantName: 'Imobiliária Exemplo', password: pw, emailPrefix: 'exemplo', mfaPolicy: policy });
   console.log('Seed demo criado. Tenant:', r.tenantId, '— usuários: owner@exemplo.demo, manager@exemplo.demo, broker@exemplo.demo');
   await db.close();
 }

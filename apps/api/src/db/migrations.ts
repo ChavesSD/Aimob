@@ -185,6 +185,10 @@ export const MIGRATIONS: Migration[] = [
       created_at timestamptz NOT NULL DEFAULT now()
     );
   ` },
+  { version: 7, name: 'politica de mfa e revogacao de sessoes (epoca de sessao)', sql: `
+    ALTER TABLE tenant_settings ADD COLUMN IF NOT EXISTS mfa_policy text NOT NULL DEFAULT 'admins' CHECK (mfa_policy IN ('off','admins','staff'));
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS session_epoch int NOT NULL DEFAULT 0;
+  ` },
 ];
 
 export async function runMigrations(db: Db, migrations: Migration[] = MIGRATIONS): Promise<number[]> {

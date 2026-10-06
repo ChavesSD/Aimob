@@ -6,7 +6,7 @@ import { z } from 'zod';
 import type { Db } from './db/client.js';
 import { scoped } from './db/client.js';
 import { hashPassword, signMfaToken, signToken, verifyPassword, verifyToken } from './auth.js';
-import { registerMfaRoutes } from './routes/mfa.js';
+import { MFA_SETUP_ROUTES, mfaRequiredFor, registerMfaRoutes, type MfaPolicy } from './routes/mfa.js';
 
 const DUMMY_HASH = hashPassword('senha-fictícia-para-igualar-o-tempo-de-resposta');
 import { audit } from './audit.js';
@@ -70,7 +70,7 @@ export async function buildApp(db: Db, opts: { trustProxy?: boolean; logger?: bo
   app.post('/api/auth/login', { config: { public: true, rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req, reply) => {
     const body = z.object({ email: z.string().email(), password: z.string().min(1) }).parse(req.body);
     const { rows } = await db.query<any>(
-      'SELECT id, tenant_id, role, password_hash, active, name, mfa_enabled FROM users WHERE lower(email) = lower($1)', [body.email]);
+      'SELECT id, tenant_id, role, password_hash, active, name, mfa_enabled, session_epoch FROM users WHERE lower(email) = lower($1)', [body.email]);
     const u = rows[0];
     // Compara sempre (hash fictício quando o usuário não existe) para não vazar existência por tempo.
     const ok = verifyPassword(body.password, u ? u.password_hash : DUMMY_HASH) && !!u;
@@ -79,7 +79,7 @@ export async function buildApp(db: Db, opts: { trustProxy?: boolean; logger?: bo
       // Senha correta, mas falta o segundo fator: devolve só um token curto que serve apenas para /api/auth/mfa/verify.
       return { mfaRequired: true, mfaToken: await signMfaToken(u.id) };
     }
-    const token = await signToken({ sub: u.id, tid: u.tenant_id, role: u.role });
+    const token = await signToken({ sub: u.id, tid: u.tenant_id, role: u.role, ep: u.session_epoch });
     req.session = { sub: u.id, tid: u.tenant_id, role: u.role };
     await audit(db, req, { action: 'auth.login', resource: 'user', resourceId: u.id });
     return { token, user: { id: u.id, name: u.name, role: u.role } };
@@ -99,9 +99,18 @@ export async function buildApp(db: Db, opts: { trustProxy?: boolean; logger?: bo
     }
     // Usuário desativado perde acesso imediatamente, mesmo com token válido.
     // O papel vem sempre do banco (não do token): rebaixar um usuário vale imediatamente.
-    const { rows } = await db.query<{ role: string }>('SELECT role FROM users WHERE id = $1 AND tenant_id = $2 AND active', [req.session.sub, req.session.tid]);
+    const { rows } = await db.query<{ role: string; mfa_enabled: boolean; session_epoch: number; policy: MfaPolicy }>(
+      `SELECT u.role, u.mfa_enabled, u.session_epoch, coalesce(ts.mfa_policy, 'admins') AS policy
+         FROM users u LEFT JOIN tenant_settings ts ON ts.tenant_id = u.tenant_id WHERE u.id = $1 AND u.tenant_id = $2 AND u.active`, [req.session.sub, req.session.tid]);
     if (!rows.length) return reply.code(401).send({ error: 'Acesso desativado.' });
-    req.session.role = rows[0].role;
+    const u = rows[0];
+    // Época de sessão: uma redefinição de MFA (ou outra revogação) aumenta a época e invalida os tokens já emitidos.
+    if ((req.session.ep ?? 0) !== u.session_epoch) return reply.code(401).send({ error: 'Sessão encerrada por segurança. Entre novamente.' });
+    req.session.role = u.role;
+    // Política de MFA: quem deve ter e ainda não tem fica restrito à configuração do próprio MFA.
+    if (mfaRequiredFor(u.policy, u.role) && !u.mfa_enabled && !MFA_SETUP_ROUTES.has(req.routeOptions?.url ?? '')) {
+      return reply.code(403).send({ error: 'Sua imobiliária exige verificação em duas etapas. Ative-a para continuar.', code: 'mfa_setup_required' });
+    }
   });
 
   // ---- Imóveis ----
@@ -222,7 +231,7 @@ export async function buildApp(db: Db, opts: { trustProxy?: boolean; logger?: bo
   app.get('/api/team', { preHandler: guard('users', 'view') }, async (req) => {
     const s = scoped(db, req.session!.tid);
     const items = await s.rows(
-      `SELECT u.id, u.name, u.role, u.accepts_leads,
+      `SELECT u.id, u.name, u.role, u.accepts_leads, u.mfa_enabled,
               (SELECT count(*)::int FROM leads l WHERE l.tenant_id = u.tenant_id AND l.owner_id = u.id AND l.status = 'open') open_leads
          FROM users u WHERE u.tenant_id = $1 AND u.active ORDER BY u.name`);
     return { items, distributionMode: await getMode(db, req.session!.tid) };
