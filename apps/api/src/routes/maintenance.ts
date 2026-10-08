@@ -50,7 +50,24 @@ export function registerMaintenanceRoutes(app: FastifyInstance, db: Db) {
     await notifyUsers(db, tid, await staffIds(db, tid, ['owner', 'manager']), message, `/locacao?aba=chamados&chamado=${id}`);
   }
 
+  /** Aviso dentro do portal para o usuário do inquilino (quando já aceitou o convite). Sem canal externo: e-mail/WhatsApp ainda não existem. */
+  async function notifyRenter(tid: string, contactId: string, message: string) {
+    const { rows } = await db.query<{ id: string }>(`SELECT id FROM users WHERE tenant_id = $1 AND contact_id = $2 AND role = 'renter' AND active`, [tid, contactId]);
+    await notifyUsers(db, tid, rows.map((r) => r.id), message, '/inquilino/chamados');
+  }
+
   // ================= Inquilino =================
+  app.get('/api/renter/notifications', { preHandler: guardRenterView }, async (req) => {
+    const rows = await scoped(db, req.session!.tid).rows<any>(
+      `SELECT id, message, read_at, created_at, count FROM notifications WHERE tenant_id = $1 AND user_id = $2 ORDER BY created_at DESC LIMIT 30`, [req.session!.sub]);
+    return { unread: rows.filter((r) => !r.read_at).length, items: rows.map((r) => ({ id: r.id, message: r.message, read: !!r.read_at, at: r.created_at, count: r.count })) };
+  });
+
+  app.post('/api/renter/notifications/read', { preHandler: guardRenterView }, async (req) => {
+    const done = await scoped(db, req.session!.tid).rows(`UPDATE notifications SET read_at = now() WHERE tenant_id = $1 AND user_id = $2 AND read_at IS NULL RETURNING id`, [req.session!.sub]);
+    return { marked: done.length };
+  });
+
   app.get('/api/renter/maintenance', { preHandler: guardRenterView }, async (req, reply) => {
     const cid = await linkedContact(db, req, reply, 'renter'); if (!cid) return;
     const rows = await scoped(db, req.session!.tid).rows<any>(`${BASE} WHERE m.tenant_id = $1 AND m.requester_contact_id = $2 ORDER BY m.created_at DESC LIMIT 100`, [cid]);
@@ -146,11 +163,16 @@ export function registerMaintenanceRoutes(app: FastifyInstance, db: Db) {
     const id = uuid.parse((req.params as any).id);
     const b = z.object({ status: z.enum(['open', 'in_progress', 'waiting_tenant', 'resolved']) }).parse(req.body);
     // Chamado cancelado pelo inquilino não é reaberto pela equipe (abre-se outro).
+    const [before] = await scoped(db, req.session!.tid).rows<{ status: string }>(`SELECT status FROM maintenance_requests WHERE tenant_id = $1 AND id = $2`, [id]);
     const done = await scoped(db, req.session!.tid).rows<any>(
       `UPDATE maintenance_requests SET status = $2, updated_at = now(), resolved_at = CASE WHEN $2 = 'resolved' THEN now() ELSE NULL END
-        WHERE tenant_id = $1 AND id = $3 AND status <> 'canceled' RETURNING id, title, status`, [b.status, id]);
+        WHERE tenant_id = $1 AND id = $3 AND status <> 'canceled' RETURNING id, title, status, requester_contact_id`, [b.status, id]);
     if (!done.length) return reply.code(404).send({ error: 'Chamado não encontrado ou já cancelado.' });
     await audit(db, req, { action: 'maintenance.status', resource: 'maintenance', resourceId: id, after: { status: b.status }, summary: `Chamado "${done[0].title}" alterado para ${b.status}` });
+    if (before?.status !== b.status) {
+      const text: Record<string, string> = { open: 'foi reaberto', in_progress: 'está em andamento', waiting_tenant: 'aguarda uma resposta sua', resolved: 'foi resolvido' };
+      await notifyRenter(req.session!.tid, done[0].requester_contact_id, `Seu chamado "${done[0].title}" ${text[b.status]}.`);
+    }
     return { ok: true, status: done[0].status };
   });
 
@@ -158,12 +180,13 @@ export function registerMaintenanceRoutes(app: FastifyInstance, db: Db) {
     const id = uuid.parse((req.params as any).id);
     const b = z.object({ body: text(2000), internal: z.boolean().default(false) }).parse(req.body);
     const s = scoped(db, req.session!.tid);
-    const [r] = await s.rows<{ id: string; status: string }>(`SELECT id, status FROM maintenance_requests WHERE tenant_id = $1 AND id = $2`, [id]);
+    const [r] = await s.rows<{ id: string; status: string; title: string; requester_contact_id: string }>(`SELECT id, status, title, requester_contact_id FROM maintenance_requests WHERE tenant_id = $1 AND id = $2`, [id]);
     if (!r) return reply.code(404).send({ error: 'Chamado não encontrado.' });
     if (!b.internal && r.status === 'canceled') return reply.code(409).send({ error: 'O inquilino cancelou este chamado.' });
     await s.rows(`INSERT INTO maintenance_messages (tenant_id, request_id, author_kind, author_user_id, body, internal) VALUES ($1,$2,'staff',$3,$4,$5)`, [id, req.session!.sub, b.body, b.internal]);
     await s.rows(`UPDATE maintenance_requests SET updated_at = now() WHERE tenant_id = $1 AND id = $2`, [id]);
     await audit(db, req, { action: b.internal ? 'maintenance.note' : 'maintenance.reply', resource: 'maintenance', resourceId: id, summary: b.internal ? 'Nota interna em chamado' : 'Resposta ao inquilino em chamado' });
+    if (!b.internal) await notifyRenter(req.session!.tid, r.requester_contact_id, `A imobiliária respondeu ao seu chamado "${r.title}".`);
     return reply.code(201).send({ ok: true });
   });
 }

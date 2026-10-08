@@ -28,7 +28,7 @@ npm run test:pg -w @aimob/api                # a mesma suíte contra um PostgreS
 npm run mock:asaas -w @aimob/api             # Asaas simulado para desenvolver pagamentos (ver docs/PAGAMENTOS.md)
 ```
 
-Estado atual: **194 testes**, todos passando nos dois bancos. Estrutura e decisões técnicas em [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
+Estado atual: **197 testes**, todos passando nos dois bancos. Estrutura e decisões técnicas em [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
 
 ## O que existe hoje
 
@@ -57,7 +57,7 @@ auditoria legível, MFA TOTP obrigatório por política, PostgreSQL com migraç�
 
 Integração com provedor de assinatura eletrônica; cartão e conciliação bancária; repasse automático ao proprietário (continua registro manual: nada é transferido pelo sistema);
 busca automática de índices (IGP-M/IPCA); DIMOB e fiscal; WhatsApp; IA; publicação em portais imobiliários; documentos nos portais (só contrato em PDF para o inquilino); anexos e orçamentos nos chamados de manutenção;
-envio automático de convites por e-mail/WhatsApp; app mobile; importação de dados; billing do SaaS e painel Admin SaaS.
+envio automático de convites e avisos por e-mail/WhatsApp (os avisos ao inquilino existem só dentro do portal); app mobile; importação de dados; billing do SaaS e painel Admin SaaS.
 Pesquisa de mercado e legislação em [docs/research/PESQUISA-INICIAL.md](docs/research/PESQUISA-INICIAL.md) (vários pontos marcados como incertos; exigem validação jurídica).
 
 ## Documentação

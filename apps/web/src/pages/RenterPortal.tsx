@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { downloadFile } from '../api';
 import { useApi } from '../hooks';
 import { Empty, ErrorBox, Skeleton } from '../ui';
+import { RenterNewsAlert } from './Maintenance';
 
 // Portal do inquilino: somente leitura, só o contrato dele. Valores sempre com centavos.
 const money = (c: number) => (c / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -28,6 +29,7 @@ export function RenterHome() {
     <>
       <h1>Seu aluguel</h1>
       <p className="sub">Acompanhe o contrato, as cobranças e como pagar. Qualquer dúvida, fale com a imobiliária.</p>
+      <RenterNewsAlert />
       {data.overdue.count > 0 && <div className="alert alta" role="alert"><div>Você tem {data.overdue.count} aluguel(is) em atraso ({money(data.overdue.principalCents)} sem multa e juros). Veja como regularizar em <strong>Pagamentos</strong>.</div></div>}
       {data.nextCharge && (
         <section className="card" style={{ marginBottom: 16 }} aria-labelledby="prox">

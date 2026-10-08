@@ -192,3 +192,44 @@ describe('proprietário acompanha sem ver a conversa', () => {
     expect((await call(mgr, 'GET', '/api/renter/maintenance')).statusCode).toBe(403);
   });
 });
+
+describe('aviso ao inquilino dentro do portal', () => {
+  let id: string;
+  const unread = async (t: string) => (await call(t, 'GET', '/api/renter/notifications')).json();
+  beforeAll(async () => {
+    id = (await call(larissa, 'POST', '/api/renter/maintenance', sample({ title: 'Lâmpada queimada' }))).json().id;
+    await call(larissa, 'POST', '/api/renter/notifications/read');
+  });
+
+  it('resposta pública e mudança de situação avisam o inquilino; nota interna e mesma situação não', async () => {
+    expect((await unread(larissa)).unread).toBe(0);
+    await call(mgr, 'POST', `/api/maintenance/${id}/messages`, { body: 'ORÇAMENTO INTERNO', internal: true });
+    expect((await unread(larissa)).unread).toBe(0);
+    await call(mgr, 'POST', `/api/maintenance/${id}/messages`, { body: 'Técnico a caminho.' });
+    let n = await unread(larissa);
+    expect(n.unread).toBe(1);
+    expect(n.items[0].message).toContain('Lâmpada queimada');
+    await call(mgr, 'PATCH', `/api/maintenance/${id}`, { status: 'in_progress' });
+    await call(mgr, 'PATCH', `/api/maintenance/${id}`, { status: 'in_progress' }); // repetido: sem novo aviso
+    n = await unread(larissa);
+    const prog = n.items.filter((i: any) => i.message.includes('está em andamento'));
+    expect(prog).toHaveLength(1); expect(prog[0].count).toBe(1); // avisos iguais são agrupados: contador > 1 revelaria aviso duplicado
+    expect(JSON.stringify(n)).not.toContain('ORÇAMENTO');
+  });
+
+  it('cada inquilino só vê os próprios avisos; marcar como lido afeta só o dele', async () => {
+    expect(JSON.stringify(await unread(otherRenter))).not.toContain('Lâmpada');
+    const before = (await unread(larissa)).unread;
+    expect(before).toBeGreaterThan(0);
+    await call(otherRenter, 'POST', '/api/renter/notifications/read');
+    expect((await unread(larissa)).unread).toBe(before);
+    expect((await call(larissa, 'POST', '/api/renter/notifications/read')).json().marked).toBe(before);
+    expect((await unread(larissa)).unread).toBe(0);
+  });
+
+  it('proprietário e equipe não usam os avisos do inquilino', async () => {
+    expect((await call(landlord, 'GET', '/api/renter/notifications')).statusCode).toBe(403);
+    expect((await call(mgr, 'GET', '/api/renter/notifications')).statusCode).toBe(403);
+    expect((await call(larissa, 'GET', '/api/notifications')).statusCode).toBe(403);
+  });
+});

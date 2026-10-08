@@ -1,4 +1,5 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { useApi } from '../hooks';
 import { Empty, ErrorBox, Skeleton } from '../ui';
@@ -52,7 +53,24 @@ function Reply({ onSend, internalOption, disabled }: { onSend: (body: string, in
 }
 
 /* ---------- Inquilino ---------- */
+interface Note { id: string; message: string; read: boolean; at: string; count: number }
+
+/** Novidades dos chamados (dentro do portal). Ao abrir a tela de chamados, os avisos são marcados como lidos. */
+export function useRenterNotes(markRead: boolean) {
+  const n = useApi<{ unread: number; items: Note[] }>('/api/renter/notifications');
+  const unread = n.data?.unread ?? 0;
+  useEffect(() => { if (markRead && unread > 0) api('/api/renter/notifications/read', { method: 'POST' }).catch(() => undefined); }, [markRead, unread]);
+  return n.data;
+}
+
+export function RenterNewsAlert() {
+  const n = useRenterNotes(false);
+  if (!n || n.unread === 0) return null;
+  return <div className="alert media" role="status"><div>Você tem {n.unread} novidade(s) nos seus chamados. <Link to="/inquilino/chamados">Ver chamados</Link></div></div>;
+}
+
 export function RenterMaintenance() {
+  const notes = useRenterNotes(true);
   const list = useApi<{ items: Item[] }>('/api/renter/maintenance');
   const sum = useApi<{ contracts: { id: string; status: string; property: { title: string; code: string } }[] }>('/api/renter/summary');
   const [open, setOpen] = useState<string | null>(null);
@@ -64,6 +82,9 @@ export function RenterMaintenance() {
     <>
       <h1>Chamados</h1>
       <p className="sub">Algo quebrou ou precisa de reparo? Abra um chamado e acompanhe aqui. Em risco imediato (vazamento de gás, incêndio), ligue para os serviços de emergência antes.</p>
+      {notes && notes.items.some((x) => !x.read) && (
+        <div className="alert media" role="status"><ul style={{ margin: 0, paddingLeft: 18 }}>{notes.items.filter((x) => !x.read).map((x) => <li key={x.id}>{x.message}{x.count > 1 ? ` (${x.count}x)` : ''} <small style={{ color: 'var(--muted)' }}>{fmtDateTime(x.at)}</small></li>)}</ul></div>
+      )}
       {contracts.length > 0 && !creating && <button className="btn gold" onClick={() => setCreating(true)} style={{ marginBottom: 16 }}>Abrir chamado</button>}
       {creating && <NewRequest contracts={contracts} onDone={() => { setCreating(false); list.reload(); }} onCancel={() => setCreating(false)} />}
       {list.data.items.length === 0 ? <Empty text="Você ainda não abriu nenhum chamado." /> : list.data.items.map((i) => (
