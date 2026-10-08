@@ -13,7 +13,7 @@ const ROLE_PERMS: Record<string, Partial<Record<Module, Action[]>>> = {
   // Proprietário do imóvel (usuário externo): só o portal, e mesmo nele só o que é dele (ver routes/portal.ts).
   landlord: { portal: ['view'] },
   // Inquilino (usuário externo): só o portal do inquilino, e só o contrato dele.
-  renter: { renter_portal: ['view'] },
+  renter: { renter_portal: ['view', 'create'] },
 };
 
 export function can(role: string, mod: Module, action: Action): boolean {

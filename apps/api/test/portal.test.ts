@@ -143,7 +143,7 @@ describe('consumo atômico do convite', () => {
 describe('negar por padrão', () => {
   it('proprietário é barrado em TODA rota que não é do portal (inventário de rotas)', async () => {
     const t = await login('helena@proprietaria.example', OWNER_PW);
-    const allowed = [/^\/api\/me$/, /^\/api\/auth\/mfa\/(setup|enable|disable)$/, /^\/api\/portal\/(summary|properties|charges|payouts|statement\.csv)$/];
+    const allowed = [/^\/api\/me$/, /^\/api\/auth\/mfa\/(setup|enable|disable)$/, /^\/api\/portal\/(summary|properties|charges|payouts|statement\.csv|maintenance)$/];
     const zero = '00000000-0000-0000-0000-000000000000';
     const routes = app.registeredRoutes.filter((r) => r.url.startsWith('/api/') && !r.public && r.method !== 'HEAD' && r.method !== 'OPTIONS');
     expect(routes.length).toBeGreaterThan(60); // o inventário realmente cobre o sistema

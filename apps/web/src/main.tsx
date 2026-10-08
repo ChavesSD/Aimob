@@ -19,6 +19,7 @@ import Payments from './pages/Payments';
 import AcceptInvite from './pages/AcceptInvite';
 import { PortalHome, PortalProperties, PortalPayouts } from './pages/Portal';
 import { RenterHome, RenterPayments, RenterContract } from './pages/RenterPortal';
+import { RenterMaintenance, PortalMaintenance } from './pages/Maintenance';
 
 /** Página inicial por perfil. Lê a sessão a cada renderização (e não uma vez, na montagem das rotas). */
 function Home() {
@@ -43,6 +44,7 @@ function Shell() {
             <NavLink to="/portal" end>Resumo</NavLink>
             <NavLink to="/portal/imoveis">Meus imóveis</NavLink>
             <NavLink to="/portal/repasses">Repasses e extrato</NavLink>
+            <NavLink to="/portal/manutencao">Manutenção</NavLink>
             <NavLink to="/seguranca">Segurança</NavLink>
           </nav>
           <div className="foot">{s.user.name}<br /><button className="btn ghost" style={{ marginTop: 8 }} onClick={logout}>Sair</button></div>
@@ -61,6 +63,7 @@ function Shell() {
             <NavLink to="/inquilino" end>Resumo</NavLink>
             <NavLink to="/inquilino/pagamentos">Pagamentos</NavLink>
             <NavLink to="/inquilino/contrato">Contrato</NavLink>
+            <NavLink to="/inquilino/chamados">Chamados</NavLink>
             <NavLink to="/seguranca">Segurança</NavLink>
           </nav>
           <div className="foot">{s.user.name}<br /><button className="btn ghost" style={{ marginTop: 8 }} onClick={logout}>Sair</button></div>
@@ -106,9 +109,11 @@ createRoot(document.getElementById('root')!).render(
           <Route path="inquilino" element={<RenterHome />} />
           <Route path="inquilino/pagamentos" element={<RenterPayments />} />
           <Route path="inquilino/contrato" element={<RenterContract />} />
+          <Route path="inquilino/chamados" element={<RenterMaintenance />} />
           <Route path="portal" element={<PortalHome />} />
           <Route path="portal/imoveis" element={<PortalProperties />} />
           <Route path="portal/repasses" element={<PortalPayouts />} />
+          <Route path="portal/manutencao" element={<PortalMaintenance />} />
           <Route path="crm" element={<Leads />} />
           <Route path="pipeline" element={<Pipeline />} />
           <Route path="agenda" element={<Agenda />} />

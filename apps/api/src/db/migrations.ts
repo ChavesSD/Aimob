@@ -189,6 +189,36 @@ export const MIGRATIONS: Migration[] = [
     ALTER TABLE tenant_settings ADD COLUMN IF NOT EXISTS mfa_policy text NOT NULL DEFAULT 'admins' CHECK (mfa_policy IN ('off','admins','staff'));
     ALTER TABLE users ADD COLUMN IF NOT EXISTS session_epoch int NOT NULL DEFAULT 0;
   ` },
+  { version: 8, name: 'chamados de manutencao (portal do inquilino)', sql: `
+    CREATE TABLE IF NOT EXISTS maintenance_requests (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id uuid NOT NULL REFERENCES tenants(id),
+      contract_id uuid NOT NULL REFERENCES rental_contracts(id),
+      property_id uuid NOT NULL REFERENCES properties(id),
+      requester_contact_id uuid NOT NULL REFERENCES contacts(id),
+      title text NOT NULL,
+      description text NOT NULL,
+      category text NOT NULL DEFAULT 'other' CHECK (category IN ('hydraulic','electrical','structural','appliance','other')),
+      urgency text NOT NULL DEFAULT 'normal' CHECK (urgency IN ('low','normal','urgent')),
+      status text NOT NULL DEFAULT 'open' CHECK (status IN ('open','in_progress','waiting_tenant','resolved','canceled')),
+      resolved_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS maintenance_requests_tenant_idx ON maintenance_requests (tenant_id, status, created_at DESC);
+    CREATE INDEX IF NOT EXISTS maintenance_requests_requester_idx ON maintenance_requests (tenant_id, requester_contact_id);
+    CREATE TABLE IF NOT EXISTS maintenance_messages (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id uuid NOT NULL REFERENCES tenants(id),
+      request_id uuid NOT NULL REFERENCES maintenance_requests(id),
+      author_kind text NOT NULL CHECK (author_kind IN ('renter','staff')),
+      author_user_id uuid,
+      body text NOT NULL,
+      internal boolean NOT NULL DEFAULT false,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS maintenance_messages_request_idx ON maintenance_messages (tenant_id, request_id, created_at);
+  ` },
 ];
 
 export async function runMigrations(db: Db, migrations: Migration[] = MIGRATIONS): Promise<number[]> {

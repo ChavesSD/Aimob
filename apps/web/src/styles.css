@@ -49,7 +49,9 @@ h1 { font-size: 24px; margin: 0 0 var(--s1); font-weight: 650; }
 .btn.ghost { background: transparent; border: 1px solid var(--border); } .btn.ghost:hover { background: var(--surface-2); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-input, select { background: var(--surface-2); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius-sm); padding: 10px var(--s3); font: inherit; min-height: 40px; width: 100%; }
+input, select, textarea { background: var(--surface-2); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius-sm); padding: 10px var(--s3); font: inherit; min-height: 40px; width: 100%; }
+textarea { resize: vertical; }
+.row-btn { display: block; width: 100%; text-align: left; line-height: 1.5; }
 label { display: block; font-size: 13px; color: var(--muted); margin-bottom: var(--s1); }
 input[type='checkbox'] { width: 18px; min-height: 18px; height: 18px; padding: 0; accent-color: var(--gold); flex: none; }
 label.check { display: flex; align-items: center; gap: var(--s2); color: var(--text); font-size: 14px; margin-bottom: 0; }

@@ -1,12 +1,12 @@
 # Onde paramos (06/10/2026)
 
-Suíte: **180 testes** passando em PGlite e em PostgreSQL 18 real (`npm test` e `npm run test:pg -w @aimob/api`). Rodar tudo localmente: `npm run dev` (ver README).
+Suíte: **194 testes** passando em PGlite e em PostgreSQL 18 real (`npm test` e `npm run test:pg -w @aimob/api`). Rodar tudo localmente: `npm run dev` (ver README).
 
 ## Pronto
 Fundação multi-tenant; CRM, pipeline, agenda de visitas, imóveis, distribuição de leads, automações; locação e financeiro; PostgreSQL com migrações, backup e restauração criptografados;
 MFA obrigatório por política (padrão: diretoria, gerência e financeiro) com redefinição por colega e revogação de sessões; boleto com Pix pelo Asaas no modelo do Aidate
 (conta principal + subconta + split + webhook global); contratos em documento (modelos, versões, aprovação, PDF com hash, assinatura registrada manualmente);
-portal do proprietário e portal do inquilino; landing com diagnóstico.
+portal do proprietário e portal do inquilino; chamados de manutenção (inquilino abre e conversa, equipe trata com notas internas, proprietário acompanha); landing com diagnóstico.
 
 ## Decisões pendentes (suas)
 1. **Provedor de assinatura eletrônica e nível de assinatura** (qualificada/ICP-Brasil se for registrar em cartório): critérios em [ASSINATURA.md](ASSINATURA.md).
@@ -16,7 +16,7 @@ portal do proprietário e portal do inquilino; landing com diagnóstico.
 
 ## Candidatos para a próxima etapa
 1. Integração com o provedor de assinatura (depende da decisão 1).
-2. Chamados de manutenção e documentos nos portais (proprietário e inquilino).
+2. Documentos nos portais; anexos/fotos e orçamentos nos chamados de manutenção (e aviso por e-mail/WhatsApp ao inquilino quando a imobiliária responde).
 3. Produção: monitoramento de erros, CSP validada em servidor real, rotação de segredos, jobs em fila.
 4. Envio automático de convites e avisos (e-mail/WhatsApp com a API oficial).
 5. IA com regras de segurança, publicação em portais imobiliários, importação de dados, Admin SaaS e billing.

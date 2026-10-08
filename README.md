@@ -28,7 +28,7 @@ npm run test:pg -w @aimob/api                # a mesma suíte contra um PostgreS
 npm run mock:asaas -w @aimob/api             # Asaas simulado para desenvolver pagamentos (ver docs/PAGAMENTOS.md)
 ```
 
-Estado atual: **180 testes**, todos passando nos dois bancos. Estrutura e decisões técnicas em [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
+Estado atual: **194 testes**, todos passando nos dois bancos. Estrutura e decisões técnicas em [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
 
 ## O que existe hoje
 
@@ -45,8 +45,8 @@ baixa automática conservadora (valor divergente vai para revisão). **Não vali
 **Contratos em documento:** modelos com variáveis, valor por extenso, versões imutáveis com hash, aprovação em duas pessoas, PDF com verificação de integridade,
 coleta de assinaturas em **modo manual** (o sistema não assina por ninguém). Ver [docs/ASSINATURA.md](docs/ASSINATURA.md).
 
-**Portais (somente leitura, convite de uso único):** proprietário (imóveis, interesse recebido, aluguéis, repasses, extrato CSV) e
-inquilino (cobranças com estimativa de atraso e opções de pagamento, contrato em PDF).
+**Portais (convite de uso único):** proprietário (somente leitura: imóveis, interesse recebido, aluguéis, repasses, extrato CSV, chamados de manutenção dos imóveis dele) e
+inquilino (cobranças com estimativa de atraso e opções de pagamento, contrato em PDF, chamados de manutenção com conversa com a imobiliária; a equipe trata, responde e pode escrever notas internas que o inquilino nunca vê).
 
 **Segurança e operação:** isolamento por imobiliária, permissões por perfil (diretoria, gerência, financeiro, corretor, marketing, proprietário, inquilino) com negação por padrão,
 auditoria legível, MFA TOTP obrigatório por política, PostgreSQL com migrações, backup e restauração criptografados. Ver [docs/OPERACAO.md](docs/OPERACAO.md).
@@ -56,7 +56,7 @@ auditoria legível, MFA TOTP obrigatório por política, PostgreSQL com migraç�
 ## O que NÃO existe (não prometer em material comercial)
 
 Integração com provedor de assinatura eletrônica; cartão e conciliação bancária; repasse automático ao proprietário (continua registro manual: nada é transferido pelo sistema);
-busca automática de índices (IGP-M/IPCA); DIMOB e fiscal; WhatsApp; IA; publicação em portais imobiliários; chamados de manutenção e documentos nos portais;
+busca automática de índices (IGP-M/IPCA); DIMOB e fiscal; WhatsApp; IA; publicação em portais imobiliários; documentos nos portais (só contrato em PDF para o inquilino); anexos e orçamentos nos chamados de manutenção;
 envio automático de convites por e-mail/WhatsApp; app mobile; importação de dados; billing do SaaS e painel Admin SaaS.
 Pesquisa de mercado e legislação em [docs/research/PESQUISA-INICIAL.md](docs/research/PESQUISA-INICIAL.md) (vários pontos marcados como incertos; exigem validação jurídica).
 

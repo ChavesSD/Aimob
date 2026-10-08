@@ -20,7 +20,7 @@ Isso já pegou defeitos que o PGlite escondia (por exemplo, `now()` é o início
 |---|---|
 | `app.ts`, `server.ts`, `config.ts` | montagem do Fastify, subida, configuração e validação de produção |
 | `auth.ts`, `permissions.ts`, `guard.ts`, `audit.ts` | sessão (JWT), papéis e permissões, guarda por rota, auditoria |
-| `routes/` | HTTP: `rentals`, `payments`, `documents`, `portal`, `renterPortal`, `mfa`, `automation`, `public` (o restante do CRM está em `app.ts`) |
+| `routes/` | HTTP: `rentals`, `payments`, `documents`, `maintenance`, `portal`, `renterPortal`, `mfa`, `automation`, `public` (o restante do CRM está em `app.ts`) |
 | `domain/` | regras puras ou de domínio: `scoring`, `money`, `rentalService`, `distribution`, `automation`, `contractDocs`, `extenso`, `totp`, `crypto`, `notify`... |
 | `payments/` | interface de provedor (`provider.ts`), cliente Asaas (`asaas.ts`) e serviço (`service.ts`) |
 | `db/` | cliente, migrações versionadas, seed, backup/restauração |
